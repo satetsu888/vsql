@@ -137,90 +137,23 @@ func (s *Server) handleQuery(w *bufio.Writer, query string) error {
 		return nil
 	}
 
-	parsedQuery, err := parser.Parse(query)
+	columns, rows, tag, err := parser.ExecutePgQuery(query, s.dataStore, s.metaStore)
 	if err != nil {
 		return err
 	}
 
-	switch parsedQuery.Type {
-	case parser.SelectQuery:
-		return s.handleSelect(w, parsedQuery)
-	case parser.InsertQuery:
-		return s.handleInsert(w, parsedQuery)
-	case parser.CreateTableQuery:
-		return s.handleCreateTable(w, parsedQuery)
-	default:
-		return fmt.Errorf("unsupported query type")
-	}
-}
-
-func (s *Server) handleSelect(w *bufio.Writer, q *parser.ParsedQuery) error {
-	table, exists := s.dataStore.GetTable(q.Table)
-	if !exists {
-		return fmt.Errorf("table '%s' does not exist", q.Table)
-	}
-
-	rows := table.GetRows()
-	
-	var columns []string
-	if len(q.Columns) == 1 && q.Columns[0] == "*" {
-		columns = s.metaStore.GetTableColumns(q.Table)
-		if len(columns) == 0 && len(rows) > 0 {
-			for key := range rows[0] {
-				columns = append(columns, key)
-			}
-		}
-	} else {
-		columns = q.Columns
-	}
-
-	if err := WriteRowDescription(w, columns); err != nil {
-		return err
-	}
-
-	for _, row := range rows {
-		if q.Where != nil && !parser.EvaluateWhere(row, q.Where) {
-			continue
-		}
-
-		values := make([]interface{}, len(columns))
-		for i, col := range columns {
-			values[i] = row[col]
-		}
-		
-		if err := WriteDataRow(w, values); err != nil {
+	if columns != nil {
+		if err := WriteRowDescription(w, columns); err != nil {
 			return err
 		}
-	}
 
-	return WriteCommandComplete(w, fmt.Sprintf("SELECT %d", len(rows)))
-}
-
-func (s *Server) handleInsert(w *bufio.Writer, q *parser.ParsedQuery) error {
-	if err := s.dataStore.CreateTable(q.Table); err != nil {
-		return err
-	}
-
-	table, _ := s.dataStore.GetTable(q.Table)
-
-	for _, valueSet := range q.Values {
-		row := make(storage.Row)
-		for i, col := range q.Columns {
-			if i < len(valueSet) {
-				row[col] = valueSet[i]
+		for _, row := range rows {
+			if err := WriteDataRow(w, row); err != nil {
+				return err
 			}
 		}
-		
-		table.Insert(row)
-		s.metaStore.UpdateFromRow(q.Table, row)
 	}
 
-	return WriteCommandComplete(w, fmt.Sprintf("INSERT 0 %d", len(q.Values)))
+	return WriteCommandComplete(w, tag)
 }
 
-func (s *Server) handleCreateTable(w *bufio.Writer, q *parser.ParsedQuery) error {
-	if err := s.dataStore.CreateTable(q.Table); err != nil {
-		return err
-	}
-	return WriteCommandComplete(w, "CREATE TABLE")
-}
