@@ -53,13 +53,22 @@ SELECT * FROM users WHERE age >= 30 AND name = 'Bob';
 
 ## 実装済み機能
 
+### 基本的なSQL操作
 - CREATE TABLE（PostgreSQL構文）
 - INSERT INTO
 - SELECT（*、特定カラム）
 - UPDATE
-- DELETE
+- DELETE  
 - DROP TABLE
-- WHERE句（=, !=, <>, >, <, >=, <=、AND、OR、NOT）
+
+### 高度な機能
+- **JOIN**: INNER JOIN、LEFT JOIN、RIGHT JOIN、FULL OUTER JOIN
+- **サブクエリ**: SELECT内、FROM句、WHERE句（EXISTS、IN、ALL、ANY）
+- **集約関数**: COUNT、SUM、AVG、MAX、MIN
+- **GROUP BY / HAVING**: グループ化と集約条件
+- **ORDER BY**: ソート機能
+- **LIMIT / OFFSET**: 結果の制限とページング
+- **WHERE句**: 複雑な条件（=, !=, <>, >, <, >=, <=、AND、OR、NOT）
 
 ## 技術的特徴
 

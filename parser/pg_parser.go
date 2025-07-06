@@ -41,8 +41,14 @@ func ExecutePgQuery(query string, dataStore *storage.DataStore, metaStore *stora
 }
 
 func executePgSelect(stmt *pg_query.SelectStmt, dataStore *storage.DataStore, metaStore *storage.MetaStore) ([]string, [][]interface{}, string, error) {
+	// Check if this is a complex query that needs advanced processing
+	if needsAdvancedProcessing(stmt) {
+		return executePgSelectAdvanced(stmt, dataStore, metaStore)
+	}
+
+	// Simple single-table query - use optimized path
 	if len(stmt.FromClause) != 1 {
-		return nil, nil, "", fmt.Errorf("only single table SELECT is supported")
+		return nil, nil, "", fmt.Errorf("only single table SELECT is supported in simple mode")
 	}
 
 	tableName := extractTableName(stmt.FromClause[0])
@@ -72,6 +78,84 @@ func executePgSelect(stmt *pg_query.SelectStmt, dataStore *storage.DataStore, me
 	}
 
 	return columns, resultRows, fmt.Sprintf("SELECT %d", len(resultRows)), nil
+}
+
+func needsAdvancedProcessing(stmt *pg_query.SelectStmt) bool {
+	// Check if query has features requiring advanced processing
+	if len(stmt.FromClause) > 1 {
+		return true
+	}
+	
+	// Check for JOINs
+	if len(stmt.FromClause) > 0 {
+		if _, ok := stmt.FromClause[0].Node.(*pg_query.Node_JoinExpr); ok {
+			return true
+		}
+		// Check for subquery in FROM
+		if _, ok := stmt.FromClause[0].Node.(*pg_query.Node_RangeSubselect); ok {
+			return true
+		}
+	}
+	
+	// Check for GROUP BY
+	if len(stmt.GroupClause) > 0 {
+		return true
+	}
+	
+	// Check for HAVING
+	if stmt.HavingClause != nil {
+		return true
+	}
+	
+	// Check for aggregate functions in target list
+	for _, target := range stmt.TargetList {
+		if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
+			if funcCall, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_FuncCall); ok && funcCall.FuncCall != nil {
+				return true
+			}
+			// Check for subquery in SELECT
+			if _, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_SubLink); ok {
+				return true
+			}
+		}
+	}
+	
+	// Check for subquery in WHERE
+	if stmt.WhereClause != nil {
+		if hasSubquery(stmt.WhereClause) {
+			return true
+		}
+	}
+	
+	// Check for ORDER BY
+	if len(stmt.SortClause) > 0 {
+		return true
+	}
+	
+	// Check for LIMIT/OFFSET
+	if stmt.LimitCount != nil || stmt.LimitOffset != nil {
+		return true
+	}
+	
+	return false
+}
+
+func hasSubquery(node *pg_query.Node) bool {
+	switch n := node.Node.(type) {
+	case *pg_query.Node_SubLink:
+		return true
+	case *pg_query.Node_BoolExpr:
+		for _, arg := range n.BoolExpr.Args {
+			if hasSubquery(arg) {
+				return true
+			}
+		}
+	case *pg_query.Node_AExpr:
+		if hasSubquery(n.AExpr.Lexpr) || hasSubquery(n.AExpr.Rexpr) {
+			return true
+		}
+	}
+	return false
 }
 
 func executePgInsert(stmt *pg_query.InsertStmt, dataStore *storage.DataStore, metaStore *storage.MetaStore) ([]string, [][]interface{}, string, error) {
