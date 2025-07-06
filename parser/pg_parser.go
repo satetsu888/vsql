@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"sort"
 
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"vsql/storage"
@@ -32,7 +33,7 @@ func ExecutePgQuery(query string, dataStore *storage.DataStore, metaStore *stora
 	case *pg_query.Node_DeleteStmt:
 		return executePgDelete(node.DeleteStmt, dataStore)
 	case *pg_query.Node_CreateStmt:
-		return executePgCreateTable(node.CreateStmt, dataStore)
+		return executePgCreateTable(node.CreateStmt, dataStore, metaStore)
 	case *pg_query.Node_DropStmt:
 		return executePgDropTable(node.DropStmt, dataStore, metaStore)
 	default:
@@ -177,6 +178,9 @@ func executePgInsert(stmt *pg_query.InsertStmt, dataStore *storage.DataStore, me
 				columns = append(columns, target.ResTarget.Name)
 			}
 		}
+	} else {
+		// No columns specified in INSERT, try to get them from metastore
+		columns = metaStore.GetTableColumns(tableName)
 	}
 
 	rowsInserted := 0
@@ -263,7 +267,7 @@ func executePgDelete(stmt *pg_query.DeleteStmt, dataStore *storage.DataStore) ([
 	return nil, nil, fmt.Sprintf("DELETE %d", deletedCount), nil
 }
 
-func executePgCreateTable(stmt *pg_query.CreateStmt, dataStore *storage.DataStore) ([]string, [][]interface{}, string, error) {
+func executePgCreateTable(stmt *pg_query.CreateStmt, dataStore *storage.DataStore, metaStore *storage.MetaStore) ([]string, [][]interface{}, string, error) {
 	tableName := extractTableNameFromRangeVar(stmt.Relation)
 	if tableName == "" {
 		return nil, nil, "", fmt.Errorf("could not extract table name")
@@ -271,6 +275,19 @@ func executePgCreateTable(stmt *pg_query.CreateStmt, dataStore *storage.DataStor
 
 	if err := dataStore.CreateTable(tableName); err != nil {
 		return nil, nil, "", err
+	}
+
+	// Extract column names from table elements
+	var columns []string
+	for _, elem := range stmt.TableElts {
+		if colDef, ok := elem.Node.(*pg_query.Node_ColumnDef); ok {
+			columns = append(columns, colDef.ColumnDef.Colname)
+		}
+	}
+
+	// Store column names in metastore if any were defined
+	if len(columns) > 0 {
+		metaStore.AddColumns(tableName, columns)
 	}
 
 	return nil, nil, "CREATE TABLE", nil
@@ -319,9 +336,13 @@ func extractSelectColumns(stmt *pg_query.SelectStmt, tableName string, metaStore
 					} else if _, ok := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_AStar); ok {
 						columns = metaStore.GetTableColumns(tableName)
 						if len(columns) == 0 && len(rows) > 0 {
+							// Collect column names and sort them for consistent ordering
+							var allCols []string
 							for key := range rows[0] {
-								columns = append(columns, key)
+								allCols = append(allCols, key)
 							}
+							sort.Strings(allCols)
+							columns = allCols
 						}
 						break
 					}
@@ -339,6 +360,9 @@ func evaluatePgWhere(row storage.Row, whereClause *pg_query.Node) bool {
 		return evaluateAExpr(row, expr.AExpr)
 	case *pg_query.Node_BoolExpr:
 		return evaluateBoolExpr(row, expr.BoolExpr)
+	case *pg_query.Node_SubLink:
+		// Handle subqueries - simplified version
+		return true // Will be handled by advanced query processor
 	default:
 		return true
 	}
@@ -346,6 +370,22 @@ func evaluatePgWhere(row storage.Row, whereClause *pg_query.Node) bool {
 
 func evaluateAExpr(row storage.Row, expr *pg_query.A_Expr) bool {
 	var leftVal, rightVal interface{}
+
+	// Check if this is an IN or EXISTS expression
+	opName := ""
+	if len(expr.Name) > 0 {
+		if str, ok := expr.Name[0].Node.(*pg_query.Node_String_); ok {
+			opName = str.String_.Sval
+		}
+	}
+
+	// Handle IN expression with subquery
+	if opName == "=" && expr.Rexpr != nil {
+		if _, ok := expr.Rexpr.Node.(*pg_query.Node_SubLink); ok {
+			// This is an IN subquery - should be handled by advanced processor
+			return true
+		}
+	}
 
 	if colRef, ok := expr.Lexpr.Node.(*pg_query.Node_ColumnRef); ok {
 		if len(colRef.ColumnRef.Fields) > 0 {
@@ -356,13 +396,6 @@ func evaluateAExpr(row storage.Row, expr *pg_query.A_Expr) bool {
 	}
 
 	rightVal = extractPgValue(expr.Rexpr)
-
-	opName := ""
-	if len(expr.Name) > 0 {
-		if str, ok := expr.Name[0].Node.(*pg_query.Node_String_); ok {
-			opName = str.String_.Sval
-		}
-	}
 
 	return compareValuesPg(leftVal, opName, rightVal)
 }

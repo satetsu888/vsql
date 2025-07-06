@@ -38,6 +38,7 @@ go test ./... -cover
 ./test_vsql.sh
 
 # Run enhanced integration tests with colored output
+# This includes comprehensive tests for JOINs, subqueries, aggregations, etc.
 ./test_vsql_enhanced.sh
 
 # Run memory stress test
@@ -81,7 +82,7 @@ go vet ./...
 
 3. **Storage Module** (`storage/`)
    - `datastore.go`: In-memory table and row storage using `sync.RWMutex` for thread safety
-   - `metastore.go`: Metadata storage for table schemas
+   - `metastore.go`: Metadata storage for table schemas and column ordering
    - Schema-less design: rows are `map[string]interface{}`, non-existent columns return NULL
 
 ### Request Flow
@@ -100,13 +101,16 @@ go vet ./...
 - **PostgreSQL Compatibility**: Full syntax support through official parser, wire protocol compatibility
 - **In-memory Only**: No persistence, all data lost on restart
 - **Thread-safe**: All storage operations protected by RWMutex
+- **Column Ordering**: Maintains consistent column order from CREATE TABLE statements, with additional columns appended as needed
 
 ## Supported SQL Features
 
 - Basic operations: CREATE TABLE, INSERT, SELECT, UPDATE, DELETE, DROP TABLE
 - Complex WHERE clauses with AND, OR, NOT
 - JOINs: INNER, LEFT, RIGHT, FULL OUTER
-- Subqueries: In SELECT, FROM, WHERE (EXISTS, IN, ALL, ANY)
 - Aggregate functions: COUNT, SUM, AVG, MAX, MIN
 - GROUP BY / HAVING
 - ORDER BY, LIMIT, OFFSET
+- Subqueries: IN and EXISTS clauses fully supported
+- SELECT * with consistent column ordering across schema-less data
+- NULL value handling

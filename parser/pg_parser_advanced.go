@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -259,7 +260,7 @@ func mergeRows(left, right storage.Row) storage.Row {
 
 func executeSubquery(subquery *pg_query.Node, ctx *QueryContext) ([]storage.Row, error) {
 	if selectStmt, ok := subquery.Node.(*pg_query.Node_SelectStmt); ok {
-		_, rows, _, err := executePgSelectAdvanced(selectStmt.SelectStmt, ctx.dataStore, ctx.metaStore)
+		columns, rows, _, err := executePgSelectAdvanced(selectStmt.SelectStmt, ctx.dataStore, ctx.metaStore)
 		if err != nil {
 			return nil, err
 		}
@@ -268,9 +269,13 @@ func executeSubquery(subquery *pg_query.Node, ctx *QueryContext) ([]storage.Row,
 		var result []storage.Row
 		for _, row := range rows {
 			storageRow := make(storage.Row)
-			// Note: This is simplified - in a real implementation, we'd need column names
+			// Map values to their column names
 			for i, val := range row {
-				storageRow[fmt.Sprintf("col%d", i)] = val
+				if i < len(columns) {
+					storageRow[columns[i]] = val
+				} else {
+					storageRow[fmt.Sprintf("col%d", i)] = val
+				}
 			}
 			result = append(result, storageRow)
 		}
@@ -315,26 +320,39 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 		if len(subRows) == 0 {
 			return true
 		}
-		// Simplified - would need to evaluate operator against all rows
+		// TODO: Implement proper ALL comparison
 		return true
 	case pg_query.SubLinkType_ANY_SUBLINK:
-		// Handle ANY/SOME comparison
+		// Handle IN/ANY comparison
 		if len(subRows) == 0 {
 			return false
 		}
-		// Simplified - would need to evaluate operator against any row
-		return true
+		
+		// Get the test expression value
+		var testValue interface{}
+		if sublink.Testexpr != nil {
+			testValue = extractValueFromNode(row, sublink.Testexpr)
+		}
+		
+		// Check if testValue matches any row in subquery result
+		for _, subRow := range subRows {
+			// Get the first column value from subquery result
+			for _, val := range subRow {
+				if compareValues(fmt.Sprintf("%v", testValue), "=", val) {
+					return true
+				}
+				break // Only check first column
+			}
+		}
+		return false
+		
 	case pg_query.SubLinkType_EXPR_SUBLINK:
 		// Scalar subquery
 		if len(subRows) != 1 {
 			return false
 		}
-		// Use first column value
-		for range subRows[0] {
-			// Compare with current expression
-			return true // Simplified
-			break
-		}
+		// TODO: Implement proper scalar subquery comparison
+		return true
 	}
 	return false
 }
@@ -375,22 +393,19 @@ func processSelectList(ctx *QueryContext, targetList []*pg_query.Node, allRows [
 	var columns []string
 	var resultRows [][]interface{}
 
+	// First pass: determine all columns (especially important for SELECT *)
+	columns = determineAllColumns(ctx, targetList, allRows, groupedRows)
+
 	if groupedRows != nil {
 		// Process grouped results
 		for _, groupRows := range groupedRows {
-			resultRow, cols := processSelectTargets(ctx, targetList, groupRows[0], groupRows, true)
-			if len(columns) == 0 {
-				columns = cols
-			}
+			resultRow := processSelectTargetsWithColumns(ctx, targetList, groupRows[0], groupRows, true, columns)
 			resultRows = append(resultRows, resultRow)
 		}
 	} else {
 		// Process non-grouped results
 		for _, row := range allRows {
-			resultRow, cols := processSelectTargets(ctx, targetList, row, allRows, false)
-			if len(columns) == 0 {
-				columns = cols
-			}
+			resultRow := processSelectTargetsWithColumns(ctx, targetList, row, allRows, false, columns)
 			resultRows = append(resultRows, resultRow)
 		}
 	}
@@ -398,36 +413,136 @@ func processSelectList(ctx *QueryContext, targetList []*pg_query.Node, allRows [
 	return columns, resultRows, nil
 }
 
-func processSelectTargets(ctx *QueryContext, targetList []*pg_query.Node, currentRow storage.Row, groupRows []storage.Row, isGrouped bool) ([]interface{}, []string) {
-	var values []interface{}
+func determineAllColumns(ctx *QueryContext, targetList []*pg_query.Node, allRows []storage.Row, groupedRows map[string][]storage.Row) []string {
 	var columns []string
-
+	
+	// Check if we have SELECT *
+	hasStar := false
 	for _, target := range targetList {
 		if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
-			// Check for SELECT *
 			if resTarget.ResTarget.Val != nil {
 				if colRef, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_ColumnRef); ok {
 					if len(colRef.ColumnRef.Fields) > 0 {
 						if _, isStar := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_AStar); isStar {
-							// Handle SELECT * - add all columns from current row
-							for colName, colValue := range currentRow {
-								columns = append(columns, colName)
-								values = append(values, colValue)
-							}
-							continue
+							hasStar = true
+							break
 						}
 					}
 				}
 			}
-			
-			value, colName := evaluateSelectExpression(resTarget.ResTarget, currentRow, groupRows, isGrouped, ctx)
-			values = append(values, value)
-			columns = append(columns, colName)
 		}
 	}
-
-	return values, columns
+	
+	if hasStar {
+		// For SELECT *, we need all columns from all rows
+		colMap := make(map[string]bool)
+		
+		// Get columns from table definitions first
+		for tableName := range ctx.tables {
+			tableCols := ctx.metaStore.GetTableColumns(tableName)
+			for _, col := range tableCols {
+				colMap[col] = true
+			}
+		}
+		
+		// Then add any additional columns from the actual rows
+		rows := allRows
+		if groupedRows != nil {
+			rows = nil
+			for _, groupRows := range groupedRows {
+				rows = append(rows, groupRows...)
+			}
+		}
+		
+		for _, row := range rows {
+			for col := range row {
+				colMap[col] = true
+			}
+		}
+		
+		// Get ordered column list
+		var orderedCols []string
+		// First add columns from table definitions
+		for tableName := range ctx.tables {
+			tableCols := ctx.metaStore.GetTableColumns(tableName)
+			for _, col := range tableCols {
+				if colMap[col] {
+					orderedCols = append(orderedCols, col)
+					delete(colMap, col)
+				}
+			}
+		}
+		// Then add remaining columns in sorted order
+		var remainingCols []string
+		for col := range colMap {
+			remainingCols = append(remainingCols, col)
+		}
+		sort.Strings(remainingCols)
+		orderedCols = append(orderedCols, remainingCols...)
+		
+		columns = orderedCols
+	} else {
+		// For specific columns, just process the target list
+		for _, target := range targetList {
+			if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
+				colName := resTarget.ResTarget.Name
+				if colName == "" && resTarget.ResTarget.Val != nil {
+					colName = extractColumnName(resTarget.ResTarget.Val)
+				}
+				columns = append(columns, colName)
+			}
+		}
+	}
+	
+	return columns
 }
+
+func processSelectTargetsWithColumns(ctx *QueryContext, targetList []*pg_query.Node, currentRow storage.Row, groupRows []storage.Row, isGrouped bool, columns []string) []interface{} {
+	values := make([]interface{}, len(columns))
+	
+	// Check if we have SELECT *
+	hasStar := false
+	for _, target := range targetList {
+		if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
+			if resTarget.ResTarget.Val != nil {
+				if colRef, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_ColumnRef); ok {
+					if len(colRef.ColumnRef.Fields) > 0 {
+						if _, isStar := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_AStar); isStar {
+							hasStar = true
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	if hasStar {
+		// For SELECT *, fill in values for all columns
+		for i, col := range columns {
+			if val, exists := currentRow[col]; exists {
+				values[i] = val
+			} else {
+				values[i] = nil
+			}
+		}
+	} else {
+		// For specific columns, evaluate each expression
+		i := 0
+		for _, target := range targetList {
+			if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
+				value, _ := evaluateSelectExpression(resTarget.ResTarget, currentRow, groupRows, isGrouped, ctx)
+				if i < len(values) {
+					values[i] = value
+					i++
+				}
+			}
+		}
+	}
+	
+	return values
+}
+
 
 func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.Row, groupRows []storage.Row, isGrouped bool, ctx *QueryContext) (interface{}, string) {
 	// Determine column name
@@ -665,6 +780,20 @@ func applyLimitOffset(rows [][]interface{}, limitCount, limitOffset *pg_query.No
 	}
 
 	return rows[offset:end]
+}
+
+func extractValueFromNode(row storage.Row, node *pg_query.Node) interface{} {
+	switch n := node.Node.(type) {
+	case *pg_query.Node_ColumnRef:
+		if len(n.ColumnRef.Fields) > 0 {
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				return row[str.String_.Sval]
+			}
+		}
+	case *pg_query.Node_AConst:
+		return extractAConstValue(n.AConst)
+	}
+	return nil
 }
 
 func compareValues(left, op string, right interface{}) bool {
