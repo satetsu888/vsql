@@ -88,8 +88,12 @@ func (s *Server) handleConnection(conn net.Conn) {
 			}
 			WriteReadyForQuery(writer)
 			writer.Flush()
+		case 'X': // Terminate message
+			// Client is closing connection
+			return
 		default:
-			fmt.Printf("Unhandled message type: %c\n", msg.Type)
+			// Silently ignore unknown message types for better compatibility
+			// fmt.Printf("Unhandled message type: %c\n", msg.Type)
 		}
 	}
 }

@@ -22,8 +22,26 @@ go build -o vsql
 
 ### Testing
 ```bash
-# Run the test script (starts server, runs SQL tests via psql, stops server)
+# Run unit tests
+go test ./...
+
+# Run tests with race detector
+go test ./... -race
+
+# Run tests with coverage
+go test ./... -cover
+
+# Run all tests (convenience script)
+./run_tests.sh
+
+# Run integration tests (starts server, runs SQL tests via psql)
 ./test_vsql.sh
+
+# Run enhanced integration tests with colored output
+./test_vsql_enhanced.sh
+
+# Run memory stress test
+./test/memory_stress_test.sh
 
 # Manual testing with psql
 psql -h localhost -p 5432 -U any_user -d any_database
