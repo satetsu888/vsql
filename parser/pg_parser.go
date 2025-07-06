@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"sort"
+	"strconv"
 
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"vsql/storage"
@@ -135,6 +136,11 @@ func needsAdvancedProcessing(stmt *pg_query.SelectStmt) bool {
 	
 	// Check for LIMIT/OFFSET
 	if stmt.LimitCount != nil || stmt.LimitOffset != nil {
+		return true
+	}
+	
+	// Check for DISTINCT
+	if stmt.DistinctClause != nil && len(stmt.DistinctClause) > 0 {
 		return true
 	}
 	
@@ -360,6 +366,8 @@ func evaluatePgWhere(row storage.Row, whereClause *pg_query.Node) bool {
 		return evaluateAExpr(row, expr.AExpr)
 	case *pg_query.Node_BoolExpr:
 		return evaluateBoolExpr(row, expr.BoolExpr)
+	case *pg_query.Node_NullTest:
+		return evaluateNullTest(row, expr.NullTest)
 	case *pg_query.Node_SubLink:
 		// Handle subqueries - simplified version
 		return true // Will be handled by advanced query processor
@@ -368,8 +376,64 @@ func evaluatePgWhere(row storage.Row, whereClause *pg_query.Node) bool {
 	}
 }
 
+func evaluateNullTest(row storage.Row, expr *pg_query.NullTest) bool {
+	var val interface{}
+
+	// Get the column value
+	if colRef, ok := expr.Arg.Node.(*pg_query.Node_ColumnRef); ok {
+		if len(colRef.ColumnRef.Fields) > 0 {
+			if str, ok := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				val = row[str.String_.Sval]
+			}
+		}
+	}
+
+	// Check null test type
+	switch expr.Nulltesttype {
+	case pg_query.NullTestType_IS_NULL:
+		return val == nil
+	case pg_query.NullTestType_IS_NOT_NULL:
+		return val != nil
+	default:
+		return false
+	}
+}
+
 func evaluateAExpr(row storage.Row, expr *pg_query.A_Expr) bool {
 	var leftVal, rightVal interface{}
+
+	// Check if this is an IN expression with a value list
+	if expr.Kind == pg_query.A_Expr_Kind_AEXPR_IN {
+		// Extract left value
+		if expr.Lexpr != nil {
+			leftVal = extractValueFromExpr(row, expr.Lexpr)
+		}
+		
+		// If left value is NULL, IN always returns false
+		if leftVal == nil {
+			return false
+		}
+		
+		// Check if right side is a list
+		if expr.Rexpr != nil {
+			if listNode, ok := expr.Rexpr.Node.(*pg_query.Node_List); ok {
+				// Check if left value matches any value in the list
+				for _, item := range listNode.List.Items {
+					itemVal := extractValueFromExpr(row, item)
+					// Skip NULL values in the list
+					if itemVal == nil {
+						continue
+					}
+					// Use the same comparison logic as regular equals
+					if compareValuesPg(leftVal, "=", itemVal) {
+						return true
+					}
+				}
+				// No match found
+				return false
+			}
+		}
+	}
 
 	// Check if this is an IN or EXISTS expression
 	opName := ""
@@ -387,15 +451,15 @@ func evaluateAExpr(row storage.Row, expr *pg_query.A_Expr) bool {
 		}
 	}
 
-	if colRef, ok := expr.Lexpr.Node.(*pg_query.Node_ColumnRef); ok {
-		if len(colRef.ColumnRef.Fields) > 0 {
-			if str, ok := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
-				leftVal = row[str.String_.Sval]
-			}
-		}
+	// Extract left value
+	if expr.Lexpr != nil {
+		leftVal = extractValueFromExpr(row, expr.Lexpr)
 	}
 
-	rightVal = extractPgValue(expr.Rexpr)
+	// Extract right value
+	if expr.Rexpr != nil {
+		rightVal = extractValueFromExpr(row, expr.Rexpr)
+	}
 
 	return compareValuesPg(leftVal, opName, rightVal)
 }
@@ -423,6 +487,24 @@ func evaluateBoolExpr(row storage.Row, expr *pg_query.BoolExpr) bool {
 		return true
 	}
 	return true
+}
+
+func extractValueFromExpr(row storage.Row, node *pg_query.Node) interface{} {
+	if node == nil {
+		return nil
+	}
+	
+	switch n := node.Node.(type) {
+	case *pg_query.Node_ColumnRef:
+		if len(n.ColumnRef.Fields) > 0 {
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				return row[str.String_.Sval]
+			}
+		}
+	case *pg_query.Node_AConst:
+		return extractAConstValue(n.AConst)
+	}
+	return nil
 }
 
 func extractPgValue(node *pg_query.Node) interface{} {
@@ -458,14 +540,34 @@ func extractAConstValue(aConst *pg_query.A_Const) interface{} {
 }
 
 func compareValuesPg(left interface{}, operator string, right interface{}) bool {
-	if left == nil && right == nil {
-		return operator == "=" || operator == "<=" || operator == ">="
-	}
-
+	// SQL three-valued logic: any comparison with NULL returns UNKNOWN (treated as false)
+	// This includes NULL = NULL, which should return UNKNOWN, not true
 	if left == nil || right == nil {
-		return operator == "!=" || operator == "<>"
+		return false
 	}
 
+	// Try to compare as numbers first
+	leftNum, leftIsNum := toNumber(left)
+	rightNum, rightIsNum := toNumber(right)
+	
+	if leftIsNum && rightIsNum {
+		switch operator {
+		case "=":
+			return leftNum == rightNum
+		case "!=", "<>":
+			return leftNum != rightNum
+		case "<":
+			return leftNum < rightNum
+		case ">":
+			return leftNum > rightNum
+		case "<=":
+			return leftNum <= rightNum
+		case ">=":
+			return leftNum >= rightNum
+		}
+	}
+	
+	// Fall back to string comparison
 	leftStr := fmt.Sprintf("%v", left)
 	rightStr := fmt.Sprintf("%v", right)
 
@@ -485,4 +587,20 @@ func compareValuesPg(left interface{}, operator string, right interface{}) bool 
 	}
 
 	return false
+}
+
+func toNumber(val interface{}) (float64, bool) {
+	switch v := val.(type) {
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case float64:
+		return v, true
+	case string:
+		if num, err := strconv.ParseFloat(v, 64); err == nil {
+			return num, true
+		}
+	}
+	return 0, false
 }

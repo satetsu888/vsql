@@ -24,6 +24,19 @@ type TableContext struct {
 	rows  []storage.Row
 }
 
+func hasAggregateFunctions(targetList []*pg_query.Node) bool {
+	for _, target := range targetList {
+		if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
+			if resTarget.ResTarget.Val != nil {
+				if _, isFuncCall := resTarget.ResTarget.Val.Node.(*pg_query.Node_FuncCall); isFuncCall {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func executePgSelectAdvanced(stmt *pg_query.SelectStmt, dataStore *storage.DataStore, metaStore *storage.MetaStore) ([]string, [][]interface{}, string, error) {
 	ctx := &QueryContext{
 		dataStore:    dataStore,
@@ -44,16 +57,29 @@ func executePgSelectAdvanced(stmt *pg_query.SelectStmt, dataStore *storage.DataS
 		rows = filterRows(rows, stmt.WhereClause, ctx)
 	}
 
+	// Check if we have aggregate functions
+	hasAggregates := hasAggregateFunctions(stmt.TargetList)
+	
 	// Handle GROUP BY
 	var groupedRows map[string][]storage.Row
 	if len(stmt.GroupClause) > 0 {
 		groupedRows = groupRows(rows, stmt.GroupClause)
+	} else if hasAggregates {
+		// If we have aggregates but no GROUP BY, treat all rows as one group
+		groupedRows = map[string][]storage.Row{
+			"__all__": rows,
+		}
 	}
 
 	// Process SELECT columns (including aggregations)
 	columns, resultRows, err := processSelectList(ctx, stmt.TargetList, rows, groupedRows, stmt.GroupClause)
 	if err != nil {
 		return nil, nil, "", err
+	}
+
+	// Apply DISTINCT
+	if stmt.DistinctClause != nil && len(stmt.DistinctClause) > 0 {
+		resultRows = applyDistinct(resultRows)
 	}
 
 	// Apply HAVING clause
@@ -316,11 +342,48 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 	case pg_query.SubLinkType_EXISTS_SUBLINK:
 		return len(subRows) > 0
 	case pg_query.SubLinkType_ALL_SUBLINK:
-		// Handle ALL comparison
+		// Handle ALL comparison (used for NOT IN)
 		if len(subRows) == 0 {
 			return true
 		}
-		// TODO: Implement proper ALL comparison
+		
+		// Get the test expression value
+		var testValue interface{}
+		if sublink.Testexpr != nil {
+			testValue = extractValueFromNode(row, sublink.Testexpr)
+		}
+		
+		// If test value is NULL, ALL comparison returns UNKNOWN (false)
+		if testValue == nil {
+			return false
+		}
+		
+		// Check if any value in the list is NULL
+		hasNull := false
+		for _, subRow := range subRows {
+			for _, val := range subRow {
+				if val == nil {
+					hasNull = true
+				}
+				break // Only check first column
+			}
+		}
+		
+		// If list contains NULL, NOT IN returns UNKNOWN (false) for all non-NULL values
+		if hasNull {
+			return false
+		}
+		
+		// Check if testValue doesn't match all rows in subquery result
+		for _, subRow := range subRows {
+			// Get the first column value from subquery result
+			for _, val := range subRow {
+				if compareValues(fmt.Sprintf("%v", testValue), "=", val) {
+					return false
+				}
+				break // Only check first column
+			}
+		}
 		return true
 	case pg_query.SubLinkType_ANY_SUBLINK:
 		// Handle IN/ANY comparison
@@ -334,10 +397,19 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 			testValue = extractValueFromNode(row, sublink.Testexpr)
 		}
 		
+		// If test value is NULL, IN always returns UNKNOWN (false)
+		if testValue == nil {
+			return false
+		}
+		
 		// Check if testValue matches any row in subquery result
 		for _, subRow := range subRows {
 			// Get the first column value from subquery result
 			for _, val := range subRow {
+				// Skip NULL values in the list - they don't match anything
+				if val == nil {
+					continue
+				}
 				if compareValues(fmt.Sprintf("%v", testValue), "=", val) {
 					return true
 				}
@@ -799,4 +871,37 @@ func extractValueFromNode(row storage.Row, node *pg_query.Node) interface{} {
 func compareValues(left, op string, right interface{}) bool {
 	// Reuse existing comparison logic
 	return compareValuesPg(left, op, right)
+}
+
+func applyDistinct(rows [][]interface{}) [][]interface{} {
+	if len(rows) == 0 {
+		return rows
+	}
+	
+	var distinctRows [][]interface{}
+	seen := make(map[string]bool)
+	
+	for _, row := range rows {
+		// Create a key for the row, treating NULLs consistently
+		key := rowToKey(row)
+		if !seen[key] {
+			seen[key] = true
+			distinctRows = append(distinctRows, row)
+		}
+	}
+	
+	return distinctRows
+}
+
+func rowToKey(row []interface{}) string {
+	var parts []string
+	for _, val := range row {
+		if val == nil {
+			// Use a special marker for NULL that won't conflict with actual values
+			parts = append(parts, "\x00NULL\x00")
+		} else {
+			parts = append(parts, fmt.Sprintf("%v", val))
+		}
+	}
+	return strings.Join(parts, "\x01")
 }
