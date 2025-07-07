@@ -64,6 +64,7 @@ ORDER BY city;
 
 -- Test 8: JOIN with GROUP BY and SUM
 -- Expected: 3 rows (Alice: 1250, Bob: 1600, Charlie: 300)
+-- FAILING: Incorrect GROUP BY handling with JOINs
 SELECT u.name, SUM(o.amount) as total_spent 
 FROM users u 
 JOIN orders o ON u.id = o.user_id 
@@ -86,6 +87,7 @@ ORDER BY name;
 
 -- Test 11: Scalar subquery comparison
 -- Expected: 2 rows (Bob: 30, Charlie: 35)
+-- FAILING: Scalar subqueries in WHERE clause not supported
 SELECT name, age 
 FROM users 
 WHERE age > (SELECT AVG(age) FROM users)
@@ -100,6 +102,7 @@ SELECT * FROM users ORDER BY age DESC LIMIT 2;
 -- Tokyo: users=1, total_sales=300
 -- Osaka: users=1, total_sales=1600
 -- Kyoto: users=1, total_sales=NULL
+-- FAILING: Complex query with multiple aggregates and NULL handling
 SELECT u.city, COUNT(DISTINCT u.id) as users, SUM(o.amount) as total_sales
 FROM users u
 LEFT JOIN orders o ON u.id = o.user_id

@@ -62,6 +62,7 @@ INNER JOIN orders o ON u.id = o.user_id;
 
 -- Test 2: LEFT JOIN with aggregation
 -- Expected: 5 rows (all users, including Eve with 0 total)
+-- FAILING: COALESCE function not implemented
 SELECT u.name, COALESCE(SUM(o.amount), 0) as total_spent
 FROM users u 
 LEFT JOIN orders o ON u.id = o.user_id
@@ -76,6 +77,7 @@ ORDER BY name;
 
 -- Test 4: EXISTS subquery
 -- Expected: 3 rows (Alice, Charlie, Dave)
+-- FAILING: Test expects Dave but he only has amount=45 (< 500)
 SELECT name FROM users u
 WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id AND o.amount > 500)
 ORDER BY name;
@@ -96,6 +98,7 @@ ORDER BY city;
 
 -- Test 7: JOIN with GROUP BY and HAVING
 -- Expected: 2 rows (Alice: 1550, Charlie: 2400)
+-- FAILING: ORDER BY with alias not working correctly
 SELECT u.name, SUM(o.amount) as total_spent
 FROM users u
 JOIN orders o ON u.id = o.user_id
@@ -105,6 +108,7 @@ ORDER BY total_spent DESC;
 
 -- Test 8: CTE (WITH clause) - Complex query
 -- Expected: 3 rows with city statistics
+-- FAILING: CTEs (WITH clause) not implemented
 WITH city_stats AS (
   SELECT u.city, 
          COUNT(DISTINCT u.id) as user_count,
@@ -121,6 +125,7 @@ ORDER BY total_revenue DESC;
 -- Test 9: Window Functions (if implemented)
 -- Expected: 6 rows with running totals
 -- Expected error if window functions not supported
+-- FAILING: Window functions (OVER clause) not implemented
 SELECT user_id, 
        amount,
        SUM(amount) OVER (PARTITION BY user_id ORDER BY id) as running_total
@@ -129,6 +134,7 @@ ORDER BY user_id, id;
 
 -- Test 10: Multiple JOINs (three tables)
 -- Expected: 6 rows
+-- FAILING: Complex multi-table JOINs with column aliasing issues
 SELECT u.name, o.amount, p.name as product_name, p.price
 FROM users u
 JOIN orders o ON u.id = o.user_id
@@ -144,6 +150,7 @@ ORDER BY type, user_id;
 
 -- Test 12: Complex WHERE with BETWEEN and IN
 -- Expected: 3 rows (Bob, Charlie, Dave)
+-- FAILING: Expected 3 rows but query logic returns 4 rows (Alice, Bob, Charlie, Dave)
 SELECT * FROM users
 WHERE (age BETWEEN 25 AND 35 AND city IN ('Tokyo', 'Osaka'))
    OR (age > 40 AND city = 'Kyoto')
