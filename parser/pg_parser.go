@@ -409,28 +409,71 @@ func evaluateAExpr(row storage.Row, expr *pg_query.A_Expr) bool {
 			leftVal = extractValueFromExpr(row, expr.Lexpr)
 		}
 		
-		// If left value is NULL, IN always returns false
-		if leftVal == nil {
-			return false
-		}
-		
 		// Check if right side is a list
 		if expr.Rexpr != nil {
 			if listNode, ok := expr.Rexpr.Node.(*pg_query.Node_List); ok {
-				// Check if left value matches any value in the list
-				for _, item := range listNode.List.Items {
-					itemVal := extractValueFromExpr(row, item)
-					// Skip NULL values in the list
-					if itemVal == nil {
-						continue
-					}
-					// Use the same comparison logic as regular equals
-					if compareValuesPg(leftVal, "=", itemVal) {
-						return true
+				// Determine if this is IN or NOT IN by checking the operator
+				isNotIn := false
+				if len(expr.Name) > 0 {
+					if str, ok := expr.Name[0].Node.(*pg_query.Node_String_); ok {
+						isNotIn = (str.String_.Sval == "<>")
 					}
 				}
-				// No match found
-				return false
+				
+				if isNotIn {
+					// NOT IN logic
+					// If left value is NULL, NOT IN always returns false
+					if leftVal == nil {
+						return false
+					}
+					
+					// Check if any value in the list is NULL
+					hasNull := false
+					for _, item := range listNode.List.Items {
+						itemVal := extractValueFromExpr(row, item)
+						if itemVal == nil {
+							hasNull = true
+							break
+						}
+					}
+					
+					// If list contains NULL, NOT IN returns false for all non-NULL values
+					if hasNull {
+						return false
+					}
+					
+					// Check if left value matches any value in the list
+					for _, item := range listNode.List.Items {
+						itemVal := extractValueFromExpr(row, item)
+						if compareValuesPg(leftVal, "=", itemVal) {
+							// Found a match, so NOT IN returns false
+							return false
+						}
+					}
+					// No match found, NOT IN returns true
+					return true
+				} else {
+					// Regular IN logic
+					// If left value is NULL, IN always returns false
+					if leftVal == nil {
+						return false
+					}
+					
+					// Check if left value matches any value in the list
+					for _, item := range listNode.List.Items {
+						itemVal := extractValueFromExpr(row, item)
+						// Skip NULL values in the list
+						if itemVal == nil {
+							continue
+						}
+						// Use the same comparison logic as regular equals
+						if compareValuesPg(leftVal, "=", itemVal) {
+							return true
+						}
+					}
+					// No match found
+					return false
+				}
 			}
 		}
 	}
