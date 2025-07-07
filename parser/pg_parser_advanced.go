@@ -476,7 +476,14 @@ func processSelectList(ctx *QueryContext, targetList []*pg_query.Node, allRows [
 	if groupedRows != nil {
 		// Process grouped results
 		for _, groupRows := range groupedRows {
-			resultRow := processSelectTargetsWithColumns(ctx, targetList, groupRows[0], groupRows, true, columns)
+			// Handle empty groups (e.g., COUNT on empty table)
+			var sampleRow storage.Row
+			if len(groupRows) > 0 {
+				sampleRow = groupRows[0]
+			} else {
+				sampleRow = make(storage.Row)
+			}
+			resultRow := processSelectTargetsWithColumns(ctx, targetList, sampleRow, groupRows, true, columns)
 			resultRows = append(resultRows, resultRow)
 		}
 	} else {
