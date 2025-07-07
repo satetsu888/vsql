@@ -17,6 +17,7 @@ type QueryContext struct {
 	subqueries   map[string][]storage.Row
 	aggregations map[string]interface{}
 	currentJoinContext *JoinContext  // Track current join context
+	currentRow   storage.Row          // Current row for correlated subqueries
 }
 
 type TableContext struct {
@@ -54,9 +55,13 @@ func executePgSelectAdvanced(stmt *pg_query.SelectStmt, dataStore *storage.DataS
 		aggregations: make(map[string]interface{}),
 	}
 
+	return executePgSelectWithContext(stmt, ctx)
+}
+
+func executePgSelectWithContext(stmt *pg_query.SelectStmt, ctx *QueryContext) ([]string, [][]interface{}, string, error) {
 	// Handle UNION/INTERSECT/EXCEPT queries
 	if stmt.Op != pg_query.SetOperation_SETOP_NONE {
-		return executeSetOperation(stmt, dataStore, metaStore)
+		return executeSetOperation(stmt, ctx.dataStore, ctx.metaStore)
 	}
 
 	// Handle FROM clause (including JOINs and subqueries)
@@ -469,7 +474,18 @@ func mergeRows(left, right storage.Row) storage.Row {
 
 func executeSubquery(subquery *pg_query.Node, ctx *QueryContext) ([]storage.Row, error) {
 	if selectStmt, ok := subquery.Node.(*pg_query.Node_SelectStmt); ok {
-		columns, rows, _, err := executePgSelectAdvanced(selectStmt.SelectStmt, ctx.dataStore, ctx.metaStore)
+		// Create a new context for the subquery that inherits currentRow
+		subCtx := &QueryContext{
+			dataStore:    ctx.dataStore,
+			metaStore:    ctx.metaStore,
+			tables:       make(map[string]*TableContext),
+			subqueries:   make(map[string][]storage.Row),
+			aggregations: make(map[string]interface{}),
+			currentRow:   ctx.currentRow, // Pass the outer query's row
+		}
+		
+		// Execute the subquery with context
+		columns, rows, _, err := executePgSelectWithContext(selectStmt.SelectStmt, subCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -506,10 +522,22 @@ func filterRows(rows []storage.Row, whereClause *pg_query.Node, ctx *QueryContex
 func evaluateWhereWithSubqueries(row storage.Row, expr *pg_query.Node, ctx *QueryContext) bool {
 	switch e := expr.Node.(type) {
 	case *pg_query.Node_SubLink:
+		// Store current row for correlated subqueries
+		oldRow := ctx.currentRow
+		ctx.currentRow = row
 		// Handle subquery in WHERE clause
-		return evaluateSubqueryExpression(row, e.SubLink, ctx)
+		result := evaluateSubqueryExpression(row, e.SubLink, ctx)
+		// Restore previous row
+		ctx.currentRow = oldRow
+		return result
+	case *pg_query.Node_AExpr:
+		return evaluateAExprWithContext(row, e.AExpr, ctx)
+	case *pg_query.Node_BoolExpr:
+		return evaluateBoolExprWithContext(row, e.BoolExpr, ctx)
+	case *pg_query.Node_NullTest:
+		return evaluateNullTestWithContext(row, e.NullTest, ctx)
 	default:
-		// Use existing WHERE evaluation
+		// Fall back to basic evaluation
 		return evaluatePgWhere(row, expr)
 	}
 }
@@ -1168,6 +1196,125 @@ func extractValueFromNode(row storage.Row, node *pg_query.Node) interface{} {
 		if len(n.ColumnRef.Fields) > 0 {
 			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
 				return row[str.String_.Sval]
+			}
+		}
+	case *pg_query.Node_AConst:
+		return extractAConstValue(n.AConst)
+	}
+	return nil
+}
+
+func evaluateAExprWithContext(row storage.Row, expr *pg_query.A_Expr, ctx *QueryContext) bool {
+	var leftVal, rightVal interface{}
+
+	// Extract values using context-aware function
+	if expr.Lexpr != nil {
+		leftVal = extractValueFromNodeWithContext(row, expr.Lexpr, ctx)
+	}
+	if expr.Rexpr != nil {
+		rightVal = extractValueFromNodeWithContext(row, expr.Rexpr, ctx)
+	}
+
+	// Get operator
+	op := ""
+	if len(expr.Name) > 0 {
+		if str, ok := expr.Name[0].Node.(*pg_query.Node_String_); ok {
+			op = str.String_.Sval
+		}
+	}
+
+	// Handle different expression kinds
+	switch expr.Kind {
+	case pg_query.A_Expr_Kind_AEXPR_OP:
+		return compareValues(fmt.Sprintf("%v", leftVal), op, rightVal)
+	case pg_query.A_Expr_Kind_AEXPR_IN:
+		// IN expression is handled by evaluatePgWhere
+		return evaluatePgWhere(row, &pg_query.Node{Node: &pg_query.Node_AExpr{AExpr: expr}})
+	default:
+		return true
+	}
+}
+
+func evaluateBoolExprWithContext(row storage.Row, expr *pg_query.BoolExpr, ctx *QueryContext) bool {
+	switch expr.Boolop {
+	case pg_query.BoolExprType_AND_EXPR:
+		for _, arg := range expr.Args {
+			if !evaluateWhereWithSubqueries(row, arg, ctx) {
+				return false
+			}
+		}
+		return true
+	case pg_query.BoolExprType_OR_EXPR:
+		for _, arg := range expr.Args {
+			if evaluateWhereWithSubqueries(row, arg, ctx) {
+				return true
+			}
+		}
+		return false
+	case pg_query.BoolExprType_NOT_EXPR:
+		if len(expr.Args) > 0 {
+			return !evaluateWhereWithSubqueries(row, expr.Args[0], ctx)
+		}
+		return true
+	}
+	return true
+}
+
+func evaluateNullTestWithContext(row storage.Row, expr *pg_query.NullTest, ctx *QueryContext) bool {
+	val := extractValueFromNodeWithContext(row, expr.Arg, ctx)
+	
+	switch expr.Nulltesttype {
+	case pg_query.NullTestType_IS_NULL:
+		return val == nil
+	case pg_query.NullTestType_IS_NOT_NULL:
+		return val != nil
+	default:
+		return false
+	}
+}
+
+func extractValueFromNodeWithContext(row storage.Row, node *pg_query.Node, ctx *QueryContext) interface{} {
+	switch n := node.Node.(type) {
+	case *pg_query.Node_ColumnRef:
+		// Handle qualified column references (table.column)
+		if len(n.ColumnRef.Fields) >= 2 {
+			// table.column format
+			tableName := ""
+			columnName := ""
+			
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				tableName = str.String_.Sval
+			}
+			if str, ok := n.ColumnRef.Fields[1].Node.(*pg_query.Node_String_); ok {
+				columnName = str.String_.Sval
+			}
+			
+			// First check if this refers to a table in the subquery
+			if _, exists := ctx.tables[tableName]; exists {
+				// This is a table from the subquery, use the current row
+				if val, exists := row[columnName]; exists {
+					return val
+				}
+			} else if ctx.currentRow != nil {
+				// Not a subquery table, might be from outer query
+				if val, exists := ctx.currentRow[columnName]; exists {
+					return val
+				}
+			}
+		} else if len(n.ColumnRef.Fields) == 1 {
+			// Unqualified column - first check current row, then outer row
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				columnName := str.String_.Sval
+				// First check current subquery row
+				if val, exists := row[columnName]; exists {
+					return val
+				}
+				// Then check outer query row if available
+				if ctx.currentRow != nil {
+					if val, exists := ctx.currentRow[columnName]; exists {
+						return val
+					}
+				}
 			}
 		}
 	case *pg_query.Node_AConst:
