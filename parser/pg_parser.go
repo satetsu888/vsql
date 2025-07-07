@@ -486,6 +486,35 @@ func evaluateAExpr(row storage.Row, expr *pg_query.A_Expr) bool {
 		}
 	}
 
+	// Handle BETWEEN expression
+	if expr.Kind == pg_query.A_Expr_Kind_AEXPR_BETWEEN || 
+	   expr.Kind == pg_query.A_Expr_Kind_AEXPR_NOT_BETWEEN {
+		// Extract the value to test
+		if expr.Lexpr != nil {
+			leftVal = extractValueFromExpr(row, expr.Lexpr)
+		}
+		
+		// BETWEEN requires a list with exactly 2 elements (lower and upper bounds)
+		if expr.Rexpr != nil {
+			if listNode, ok := expr.Rexpr.Node.(*pg_query.Node_List); ok && len(listNode.List.Items) == 2 {
+				lowerBound := extractValueFromExpr(row, listNode.List.Items[0])
+				upperBound := extractValueFromExpr(row, listNode.List.Items[1])
+				
+				// BETWEEN is inclusive: value >= lower AND value <= upper
+				result := compareValuesPg(leftVal, ">=", lowerBound) && compareValuesPg(leftVal, "<=", upperBound)
+				
+				// If NOT BETWEEN, negate the result
+				if expr.Kind == pg_query.A_Expr_Kind_AEXPR_NOT_BETWEEN {
+					result = !result
+				}
+				
+				return result
+			}
+		}
+		// If we can't extract proper bounds, return false
+		return false
+	}
+
 	// Handle IN expression with subquery
 	if opName == "=" && expr.Rexpr != nil {
 		if _, ok := expr.Rexpr.Node.(*pg_query.Node_SubLink); ok {
@@ -575,7 +604,7 @@ func extractAConstValue(aConst *pg_query.A_Const) interface{} {
 	case *pg_query.A_Const_Sval:
 		return val.Sval.Sval
 	case *pg_query.A_Const_Ival:
-		return fmt.Sprintf("%d", val.Ival.Ival)
+		return int(val.Ival.Ival)
 	case *pg_query.A_Const_Fval:
 		return val.Fval.Fval
 	}

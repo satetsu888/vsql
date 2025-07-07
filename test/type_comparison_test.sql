@@ -38,7 +38,7 @@ SELECT id, price FROM numeric_test WHERE price > 10.00;
 SELECT * FROM numeric_test WHERE id > 10 AND quantity < 300;
 
 -- Test 5: Comparing numeric columns
--- Expected: 3 rows where id < quantity
+-- Expected: 4 rows where id < quantity
 -- Bug result: string comparison of columns
 SELECT id, quantity FROM numeric_test WHERE id < quantity;
 
@@ -62,7 +62,7 @@ SELECT id FROM numeric_test ORDER BY id;
 SELECT MAX(id) as max_id, MIN(id) as min_id FROM numeric_test;
 
 -- Test 10: COUNT with numeric condition
--- Expected: 3 rows
+-- Expected: 1 rows
 -- Bug result: incorrect count
 SELECT COUNT(*) as count FROM numeric_test WHERE quantity >= 100;
 
