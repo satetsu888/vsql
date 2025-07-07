@@ -1,20 +1,11 @@
 package main
 
 import (
-	"database/sql"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
-	"time"
-
-	_ "github.com/lib/pq"
-)
-
-var (
-	vsqlCmd *exec.Cmd
-	db      *sql.DB
 )
 
 func TestMain(m *testing.M) {
@@ -25,35 +16,8 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// Start VSQL server
-	vsqlCmd = exec.Command("./vsql", "-port", "5434")
-	if err := vsqlCmd.Start(); err != nil {
-		fmt.Printf("Failed to start VSQL: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Wait for server to start
-	time.Sleep(2 * time.Second)
-
-	// Connect to database
-	var err error
-	db, err = sql.Open("postgres", "host=localhost port=5434 user=test dbname=test sslmode=disable")
-	if err != nil {
-		fmt.Printf("Failed to connect to database: %v\n", err)
-		vsqlCmd.Process.Kill()
-		os.Exit(1)
-	}
-
 	// Run tests
 	code := m.Run()
-
-	// Cleanup
-	db.Close()
-	if vsqlCmd.Process != nil {
-		vsqlCmd.Process.Kill()
-		vsqlCmd.Wait()
-	}
-	
 	os.Exit(code)
 }
 
@@ -112,10 +76,36 @@ func runSQLFile(t *testing.T, filePath string) {
 		t.Fatalf("Failed to read SQL file %s: %v", filePath, err)
 	}
 
-	// Split content into individual statements
+	// First, collect all setup queries (CREATE TABLE, INSERT) 
 	statements := splitSQLStatements(string(content))
+	setupQueries := []string{}
+	cleanupQueries := []string{}
 	
-	// Track test results
+	for _, stmt := range statements {
+		trimmed := strings.TrimSpace(stmt)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		
+		upperStmt := strings.ToUpper(trimmed)
+		if strings.HasPrefix(upperStmt, "CREATE TABLE") || strings.HasPrefix(upperStmt, "INSERT INTO") {
+			setupQueries = append(setupQueries, trimmed)
+		} else if strings.HasPrefix(upperStmt, "DROP TABLE") {
+			cleanupQueries = append(cleanupQueries, trimmed)
+		}
+	}
+	
+	// Execute all setup queries in one command
+	if len(setupQueries) > 0 {
+		setupCmd := strings.Join(setupQueries, "; ")
+		cmd := exec.Command("./vsql", "-c", setupCmd)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("Setup failed: %v, output: %s", err, output)
+		}
+	}
+	
+	// Now run individual test queries
 	testName := ""
 	expectedRows := -1
 	expectError := false
@@ -155,22 +145,21 @@ func runSQLFile(t *testing.T, filePath string) {
 			continue
 		}
 
-		// Skip setup/teardown for individual test tracking
-		if strings.HasPrefix(strings.ToUpper(stmt), "CREATE TABLE") ||
-		   strings.HasPrefix(strings.ToUpper(stmt), "INSERT INTO") ||
-		   strings.HasPrefix(strings.ToUpper(stmt), "DROP TABLE") {
-			// Execute but don't track as a test
-			_, err := db.Exec(stmt)
-			if err != nil && !strings.Contains(err.Error(), "does not exist") {
-				t.Logf("Setup/teardown query failed: %v", err)
-			}
+		// Skip setup/teardown statements
+		upperStmt := strings.ToUpper(stmt)
+		if strings.HasPrefix(upperStmt, "CREATE TABLE") ||
+		   strings.HasPrefix(upperStmt, "INSERT INTO") ||
+		   strings.HasPrefix(upperStmt, "DROP TABLE") {
 			continue
 		}
 
 		// Execute test query
 		if testName != "" {
 			t.Run(testName, func(t *testing.T) {
-				rows, err := db.Query(stmt)
+				// Combine setup + test query
+				fullCmd := strings.Join(append(setupQueries, stmt), "; ")
+				cmd := exec.Command("./vsql", "-c", fullCmd)
+				output, err := cmd.CombinedOutput()
 				
 				// Check error expectation
 				if expectError {
@@ -181,24 +170,55 @@ func runSQLFile(t *testing.T, filePath string) {
 				}
 				
 				if err != nil {
-					t.Errorf("Query failed: %v", err)
+					t.Errorf("Query failed: %v, output: %s", err, output)
 					return
 				}
-				defer rows.Close()
 
-				// Count actual rows
+				// Parse output to find the result of the test query
+				outputStr := string(output)
+				outputs := strings.Split(outputStr, "\n")
+				
+				// Find the last SELECT result in the output
+				lastSelectStart := -1
+				for i := len(outputs) - 1; i >= 0; i-- {
+					if strings.Contains(outputs[i], "----") {
+						// Found separator line, the SELECT result starts before this
+						for j := i - 1; j >= 0; j-- {
+							if outputs[j] != "" && !strings.HasPrefix(outputs[j], "INSERT") && 
+							   !strings.HasPrefix(outputs[j], "CREATE") && !strings.HasPrefix(outputs[j], "DROP") {
+								lastSelectStart = j
+								break
+							}
+						}
+						if lastSelectStart >= 0 {
+							break
+						}
+					}
+				}
+				
 				actualRows := 0
-				for rows.Next() {
-					actualRows++
+				
+				// Look for "(N rows)" pattern after the last SELECT
+				for i := len(outputs) - 1; i >= 0; i-- {
+					line := outputs[i]
+					if strings.HasPrefix(line, "(") && strings.HasSuffix(line, " rows)") {
+						// Extract number from "(N rows)"
+						line = strings.TrimPrefix(line, "(")
+						line = strings.TrimSuffix(line, " rows)")
+						if num, err := parseNumber(line); err == nil {
+							actualRows = num
+							break
+						}
+					}
 				}
 
 				// Verify row count if expected
 				if expectedRows >= 0 {
 					if actualRows != expectedRows {
-						t.Errorf("Expected %d rows, got %d", expectedRows, actualRows)
+						t.Errorf("Expected %d rows, got %d. Output:\n%s", expectedRows, actualRows, outputStr)
 					}
 				} else if expectNoRows && actualRows > 0 {
-					t.Errorf("Expected no rows, got %d", actualRows)
+					t.Errorf("Expected no rows, got %d. Output:\n%s", actualRows, outputStr)
 				}
 			})
 
