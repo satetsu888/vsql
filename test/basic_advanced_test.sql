@@ -64,7 +64,7 @@ ORDER BY city;
 
 -- Test 8: JOIN with GROUP BY and SUM
 -- Expected: 3 rows (Alice: 1250, Bob: 1600, Charlie: 300)
--- FAILING: Incorrect GROUP BY handling with JOINs
+-- FIXED: GROUP BY with JOINs now working correctly
 SELECT u.name, SUM(o.amount) as total_spent 
 FROM users u 
 JOIN orders o ON u.id = o.user_id 
@@ -102,7 +102,7 @@ SELECT * FROM users ORDER BY age DESC LIMIT 2;
 -- Tokyo: users=1, total_sales=300
 -- Osaka: users=1, total_sales=1600
 -- Kyoto: users=1, total_sales=NULL
--- FAILING: Complex query with multiple aggregates and NULL handling
+-- FAILING: HAVING clause with OR condition and NULL checks not fully supported
 SELECT u.city, COUNT(DISTINCT u.id) as users, SUM(o.amount) as total_sales
 FROM users u
 LEFT JOIN orders o ON u.id = o.user_id

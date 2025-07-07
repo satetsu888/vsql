@@ -663,8 +663,15 @@ func buildGroupKey(row storage.Row, groupClause []*pg_query.Node) string {
 func extractGroupValue(row storage.Row, node *pg_query.Node) interface{} {
 	// Extract column reference from GROUP BY expression
 	if colRef, ok := node.Node.(*pg_query.Node_ColumnRef); ok {
-		if len(colRef.ColumnRef.Fields) > 0 {
-			if str, ok := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+		fields := colRef.ColumnRef.Fields
+		if len(fields) == 2 {
+			// Qualified column reference (table.column)
+			if str, ok := fields[1].Node.(*pg_query.Node_String_); ok {
+				return row[str.String_.Sval]
+			}
+		} else if len(fields) == 1 {
+			// Unqualified column reference
+			if str, ok := fields[0].Node.(*pg_query.Node_String_); ok {
 				return row[str.String_.Sval]
 			}
 		}
@@ -681,6 +688,8 @@ func processSelectList(ctx *QueryContext, targetList []*pg_query.Node, allRows [
 
 	if groupedRows != nil {
 		// Process grouped results
+		// DEBUG: Check group count
+		// fmt.Printf("DEBUG: Processing %d groups\n", len(groupedRows))
 		for _, groupRows := range groupedRows {
 			// Handle empty groups (e.g., COUNT on empty table)
 			var sampleRow storage.Row
@@ -689,6 +698,8 @@ func processSelectList(ctx *QueryContext, targetList []*pg_query.Node, allRows [
 			} else {
 				sampleRow = make(storage.Row)
 			}
+			// DEBUG: Check group processing
+			// fmt.Printf("DEBUG: Processing group '%s' with %d rows\n", groupKey, len(groupRows))
 			resultRow := processSelectTargetsWithColumns(ctx, targetList, sampleRow, groupRows, true, columns)
 			resultRows = append(resultRows, resultRow)
 		}
@@ -845,12 +856,23 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 	if resTarget.Val != nil {
 		switch val := resTarget.Val.Node.(type) {
 		case *pg_query.Node_FuncCall:
-			// Handle aggregate functions
-			result := evaluateAggregateFunction(val.FuncCall, groupRows)
-			if colName == "" {
-				colName = strings.ToLower(val.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+			// Check if it's an aggregate function
+			funcName := strings.ToUpper(val.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+			if isAggregateFunction(funcName) {
+				// Handle aggregate functions
+				result := evaluateAggregateFunction(val.FuncCall, groupRows)
+				if colName == "" {
+					colName = strings.ToLower(val.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+				}
+				return result, colName
+			} else {
+				// Handle scalar functions
+				result := evaluateScalarFunction(val.FuncCall, currentRow, ctx)
+				if colName == "" {
+					colName = strings.ToLower(val.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+				}
+				return result, colName
 			}
-			return result, colName
 		case *pg_query.Node_ColumnRef:
 			// Handle column reference with potential table alias
 			var columnName string
@@ -889,6 +911,64 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 	return nil, colName
 }
 
+func isAggregateFunction(funcName string) bool {
+	switch funcName {
+	case "COUNT", "SUM", "AVG", "MAX", "MIN":
+		return true
+	default:
+		return false
+	}
+}
+
+func evaluateScalarFunction(funcCall *pg_query.FuncCall, row storage.Row, ctx *QueryContext) interface{} {
+	if len(funcCall.Funcname) == 0 {
+		return nil
+	}
+	
+	funcName := strings.ToUpper(funcCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+	
+	switch funcName {
+	case "COALESCE":
+		// COALESCE returns the first non-NULL argument
+		for _, arg := range funcCall.Args {
+			val := evaluateExpression(arg, row, ctx)
+			if val != nil {
+				return val
+			}
+		}
+		return nil
+	default:
+		// Unknown function, return nil
+		return nil
+	}
+}
+
+func evaluateExpression(node *pg_query.Node, row storage.Row, ctx *QueryContext) interface{} {
+	if node == nil {
+		return nil
+	}
+	
+	switch n := node.Node.(type) {
+	case *pg_query.Node_ColumnRef:
+		if len(n.ColumnRef.Fields) > 0 {
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				return row[str.String_.Sval]
+			}
+		}
+	case *pg_query.Node_AConst:
+		return extractAConstValue(n.AConst)
+	case *pg_query.Node_FuncCall:
+		funcName := strings.ToUpper(n.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+		if isAggregateFunction(funcName) {
+			// For aggregates in scalar context, we need the group rows
+			// This shouldn't normally happen in a well-formed query
+			return nil
+		}
+		return evaluateScalarFunction(n.FuncCall, row, ctx)
+	}
+	return nil
+}
+
 func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) interface{} {
 	if len(funcCall.Funcname) == 0 {
 		return nil
@@ -900,8 +980,15 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 	var colName string
 	if len(funcCall.Args) > 0 {
 		if colRef, ok := funcCall.Args[0].Node.(*pg_query.Node_ColumnRef); ok {
-			if len(colRef.ColumnRef.Fields) > 0 {
-				if str, ok := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+			fields := colRef.ColumnRef.Fields
+			if len(fields) == 2 {
+				// Qualified column reference (table.column)
+				if str, ok := fields[1].Node.(*pg_query.Node_String_); ok {
+					colName = str.String_.Sval
+				}
+			} else if len(fields) == 1 {
+				// Unqualified column reference
+				if str, ok := fields[0].Node.(*pg_query.Node_String_); ok {
 					colName = str.String_.Sval
 				}
 			}

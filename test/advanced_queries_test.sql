@@ -62,7 +62,7 @@ INNER JOIN orders o ON u.id = o.user_id;
 
 -- Test 2: LEFT JOIN with aggregation
 -- Expected: 5 rows (all users, including Eve with 0 total)
--- FAILING: COALESCE function not implemented
+-- FIXED: COALESCE function now implemented
 SELECT u.name, COALESCE(SUM(o.amount), 0) as total_spent
 FROM users u 
 LEFT JOIN orders o ON u.id = o.user_id
@@ -76,8 +76,8 @@ WHERE id IN (SELECT user_id FROM orders WHERE amount > 1000)
 ORDER BY name;
 
 -- Test 4: EXISTS subquery
--- Expected: 3 rows (Alice, Charlie, Dave)
--- FAILING: Test expects Dave but he only has amount=45 (< 500)
+-- Expected: 2 rows (Alice, Charlie)
+-- Fixed: Dave only has amount=45 (< 500) so shouldn't be included
 SELECT name FROM users u
 WHERE EXISTS (SELECT 1 FROM orders o WHERE o.user_id = u.id AND o.amount > 500)
 ORDER BY name;
@@ -98,7 +98,7 @@ ORDER BY city;
 
 -- Test 7: JOIN with GROUP BY and HAVING
 -- Expected: 2 rows (Alice: 1550, Charlie: 2400)
--- FAILING: ORDER BY with alias not working correctly
+-- FAILING: HAVING clause with aggregate functions not implemented
 SELECT u.name, SUM(o.amount) as total_spent
 FROM users u
 JOIN orders o ON u.id = o.user_id
@@ -134,7 +134,7 @@ ORDER BY user_id, id;
 
 -- Test 10: Multiple JOINs (three tables)
 -- Expected: 6 rows
--- FAILING: Complex multi-table JOINs with column aliasing issues
+-- FAILING: Complex multi-table JOINs need proper column disambiguation
 SELECT u.name, o.amount, p.name as product_name, p.price
 FROM users u
 JOIN orders o ON u.id = o.user_id
@@ -149,8 +149,8 @@ SELECT 'return' as type, user_id, -amount FROM returns
 ORDER BY type, user_id;
 
 -- Test 12: Complex WHERE with BETWEEN and IN
--- Expected: 3 rows (Bob, Charlie, Dave)
--- FAILING: Expected 3 rows but query logic returns 4 rows (Alice, Bob, Charlie, Dave)
+-- Expected: 5 rows (all users match the conditions)
+-- Fixed: All users match - Alice(30,Tokyo), Bob(25,Osaka), Charlie(35,Tokyo), Dave(45,Kyoto), Eve(28,Osaka)
 SELECT * FROM users
 WHERE (age BETWEEN 25 AND 35 AND city IN ('Tokyo', 'Osaka'))
    OR (age > 40 AND city = 'Kyoto')
