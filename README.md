@@ -10,6 +10,12 @@ VSQLは、PostgreSQL互換のプロトコルを持つスキーマレスのイン
 - インメモリストレージ
 - 複雑なWHERE句のサポート（AND、OR、NOT）
 
+## コマンドラインオプション
+
+- `-port PORT`: サーバーのリスニングポート（デフォルト: 5432）
+- `-c COMMAND`: コマンドを実行して終了（サーバーを起動せずにSQLを実行）
+- `-h`, `-help`: ヘルプメッセージを表示
+
 ## ビルドと実行
 
 ```bash
@@ -21,6 +27,16 @@ go build -o vsql
 
 # ポート指定
 ./vsql -port 5433
+
+# コマンドを実行して終了
+./vsql -c "SELECT * FROM users;"
+
+# 複数のコマンドを実行
+./vsql -c "CREATE TABLE users (id int, name text); INSERT INTO users VALUES (1, 'Alice');"
+
+# ヘルプの表示
+./vsql -h
+./vsql -help
 ```
 
 ## 使用例
