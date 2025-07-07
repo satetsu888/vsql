@@ -52,7 +52,7 @@ SELECT * FROM users WHERE id = 2 OR name = 'Charlie';
 SELECT * FROM users WHERE NOT (id = 2);
 
 -- Test 12: Combined conditions
--- Expected: 2 rows
+-- Expected: 13 rows (Bob matches first condition, plus Alice, Charlie, and User101-110 have email)
 SELECT * FROM users WHERE (id > 1 AND name LIKE 'B%') OR email IS NOT NULL;
 
 -- ### NULL Handling ###
@@ -62,11 +62,11 @@ SELECT * FROM users WHERE (id > 1 AND name LIKE 'B%') OR email IS NOT NULL;
 INSERT INTO users (id, name, email) VALUES (4, NULL, NULL);
 
 -- Test 14: IS NULL check
--- Expected: 2 rows (Bob with NULL email, id=4)
+-- Expected: 5 rows (Bob, id=4, O'Brien, Test!@#$%^&*(), 日本語テスト - all have NULL email)
 SELECT * FROM users WHERE email IS NULL;
 
 -- Test 15: IS NOT NULL check
--- Expected: 2 rows (Bob, Charlie)
+-- Expected: 16 rows (all users except id=4 have non-NULL names)
 SELECT * FROM users WHERE name IS NOT NULL;
 
 -- ### Special Characters and Security ###
@@ -98,13 +98,13 @@ INSERT INTO orders VALUES (1, 2, 100.50), (2, 3, 200.00);
 SELECT u.name, o.amount FROM users u INNER JOIN orders o ON u.id = o.user_id;
 
 -- Test 22: Left join
--- Expected: 7 rows (all users, some with NULL amount)
+-- Expected: 17 rows (all 17 users, only Bob and Charlie have amounts)
 SELECT u.name, o.amount FROM users u LEFT JOIN orders o ON u.id = o.user_id;
 
 -- ### Aggregate Functions ###
 
 -- Test 23: COUNT function
--- Expected: 1 row, count=7
+-- Expected: 1 row, count=17
 SELECT COUNT(*) FROM users;
 
 -- Test 24: SUM function

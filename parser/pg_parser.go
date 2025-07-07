@@ -2,8 +2,10 @@ package parser
 
 import (
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"vsql/storage"
@@ -573,8 +575,13 @@ func extractValueFromExpr(row storage.Row, node *pg_query.Node) interface{} {
 	
 	switch n := node.Node.(type) {
 	case *pg_query.Node_ColumnRef:
+		// Handle qualified (table.column) and unqualified (column) references
 		if len(n.ColumnRef.Fields) > 0 {
-			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+			// Get the last field as the column name
+			// For "table.column", fields[0] is table, fields[1] is column
+			// For "column", fields[0] is column
+			lastField := n.ColumnRef.Fields[len(n.ColumnRef.Fields)-1]
+			if str, ok := lastField.Node.(*pg_query.Node_String_); ok {
 				return row[str.String_.Sval]
 			}
 		}
@@ -661,6 +668,14 @@ func compareValuesPg(left interface{}, operator string, right interface{}) bool 
 		return leftStr <= rightStr
 	case ">=":
 		return leftStr >= rightStr
+	case "~~": // LIKE operator in PostgreSQL
+		return matchPattern(leftStr, rightStr)
+	case "!~~": // NOT LIKE operator
+		return !matchPattern(leftStr, rightStr)
+	case "~~*": // ILIKE operator (case-insensitive)
+		return matchPattern(strings.ToLower(leftStr), strings.ToLower(rightStr))
+	case "!~~*": // NOT ILIKE operator
+		return !matchPattern(strings.ToLower(leftStr), strings.ToLower(rightStr))
 	}
 
 	return false
@@ -680,4 +695,38 @@ func toNumber(val interface{}) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// matchPattern implements SQL LIKE pattern matching
+// % matches any sequence of characters
+// _ matches any single character
+// \ is the escape character
+func matchPattern(text, pattern string) bool {
+	// Convert SQL pattern to regex pattern
+	regexPattern := ""
+	i := 0
+	for i < len(pattern) {
+		ch := pattern[i]
+		if ch == '\\' && i+1 < len(pattern) {
+			// Escape character - add the next character literally
+			i++
+			regexPattern += regexp.QuoteMeta(string(pattern[i]))
+		} else if ch == '%' {
+			regexPattern += ".*"
+		} else if ch == '_' {
+			regexPattern += "."
+		} else {
+			regexPattern += regexp.QuoteMeta(string(ch))
+		}
+		i++
+	}
+	
+	// Anchor the pattern to match the entire string
+	regexPattern = "^" + regexPattern + "$"
+	
+	matched, err := regexp.MatchString(regexPattern, text)
+	if err != nil {
+		return false
+	}
+	return matched
 }

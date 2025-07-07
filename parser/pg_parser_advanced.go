@@ -16,12 +16,20 @@ type QueryContext struct {
 	tables       map[string]*TableContext
 	subqueries   map[string][]storage.Row
 	aggregations map[string]interface{}
+	currentJoinContext *JoinContext  // Track current join context
 }
 
 type TableContext struct {
 	name  string
 	alias string
 	rows  []storage.Row
+}
+
+type JoinContext struct {
+	leftAlias  string
+	rightAlias string
+	leftRow    storage.Row
+	rightRow   storage.Row
 }
 
 func hasAggregateFunctions(targetList []*pg_query.Node) bool {
@@ -110,36 +118,37 @@ func processFromClause(ctx *QueryContext, fromClause []*pg_query.Node) ([]storag
 		return nil, fmt.Errorf("no FROM clause specified")
 	}
 
+	// If there's only one item in FROM clause, process it directly
+	if len(fromClause) == 1 {
+		return processFromNode(ctx, fromClause[0])
+	}
+
+	// Multiple items in FROM clause - handle as CROSS JOIN
 	var result []storage.Row
 	for i, fromNode := range fromClause {
-		switch from := fromNode.Node.(type) {
-		case *pg_query.Node_JoinExpr:
-			// Handle JOIN
-			leftRows, err := processFromNode(ctx, from.JoinExpr.Larg)
-			if err != nil {
-				return nil, err
-			}
-			rightRows, err := processFromNode(ctx, from.JoinExpr.Rarg)
-			if err != nil {
-				return nil, err
-			}
-			result = performJoin(leftRows, rightRows, from.JoinExpr, ctx)
-		case *pg_query.Node_RangeVar:
-			// Handle simple table
-			if i == 0 {
-				rows, err := processFromNode(ctx, fromNode)
-				if err != nil {
-					return nil, err
+		rows, err := processFromNode(ctx, fromNode)
+		if err != nil {
+			return nil, err
+		}
+		
+		if i == 0 {
+			result = rows
+		} else {
+			// Perform CROSS JOIN with previous results
+			var newResult []storage.Row
+			for _, r1 := range result {
+				for _, r2 := range rows {
+					merged := make(storage.Row)
+					for k, v := range r1 {
+						merged[k] = v
+					}
+					for k, v := range r2 {
+						merged[k] = v
+					}
+					newResult = append(newResult, merged)
 				}
-				result = rows
 			}
-		case *pg_query.Node_RangeSubselect:
-			// Handle subquery in FROM
-			subResult, err := executeSubquery(from.RangeSubselect.Subquery, ctx)
-			if err != nil {
-				return nil, err
-			}
-			result = subResult
+			result = newResult
 		}
 	}
 
@@ -149,30 +158,86 @@ func processFromClause(ctx *QueryContext, fromClause []*pg_query.Node) ([]storag
 func processFromNode(ctx *QueryContext, node *pg_query.Node) ([]storage.Row, error) {
 	switch n := node.Node.(type) {
 	case *pg_query.Node_RangeVar:
-		tableName := n.RangeVar.Relname
-		alias := n.RangeVar.Alias
-		if alias != nil {
-			tableName = alias.Aliasname
+		realTableName := n.RangeVar.Relname
+		aliasName := realTableName
+		if n.RangeVar.Alias != nil && n.RangeVar.Alias.Aliasname != "" {
+			aliasName = n.RangeVar.Alias.Aliasname
 		}
 
-		table, exists := ctx.dataStore.GetTable(n.RangeVar.Relname)
+		table, exists := ctx.dataStore.GetTable(realTableName)
 		if !exists {
-			return nil, fmt.Errorf("table '%s' does not exist", n.RangeVar.Relname)
+			return nil, fmt.Errorf("table '%s' does not exist", realTableName)
 		}
 
 		rows := table.GetRows()
-		ctx.tables[tableName] = &TableContext{
-			name:  n.RangeVar.Relname,
-			alias: tableName,
+		
+		// Store table context with both real name and alias
+		ctx.tables[aliasName] = &TableContext{
+			name:  realTableName,
+			alias: aliasName,
 			rows:  rows,
 		}
+		if aliasName != realTableName {
+			ctx.tables[realTableName] = ctx.tables[aliasName]
+		}
+		
 		return rows, nil
 	case *pg_query.Node_JoinExpr:
-		return processFromClause(ctx, []*pg_query.Node{node})
+		// Handle JOIN
+		// Get left table info
+		leftAlias := extractTableAlias(n.JoinExpr.Larg)
+		leftRows, err := processFromNode(ctx, n.JoinExpr.Larg)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Get right table info
+		rightAlias := extractTableAlias(n.JoinExpr.Rarg)
+		rightRows, err := processFromNode(ctx, n.JoinExpr.Rarg)
+		if err != nil {
+			return nil, err
+		}
+		
+		return performJoinWithContext(leftRows, rightRows, n.JoinExpr, leftAlias, rightAlias, ctx), nil
 	case *pg_query.Node_RangeSubselect:
 		return executeSubquery(n.RangeSubselect.Subquery, ctx)
 	}
 	return nil, fmt.Errorf("unsupported FROM node type")
+}
+
+func extractTableAlias(node *pg_query.Node) string {
+	if node == nil {
+		return ""
+	}
+	
+	switch n := node.Node.(type) {
+	case *pg_query.Node_RangeVar:
+		if n.RangeVar.Alias != nil && n.RangeVar.Alias.Aliasname != "" {
+			return n.RangeVar.Alias.Aliasname
+		}
+		return n.RangeVar.Relname
+	case *pg_query.Node_JoinExpr:
+		// For nested joins, this gets more complex
+		// For now, just return empty
+		return ""
+	}
+	return ""
+}
+
+func performJoinWithContext(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr, leftAlias, rightAlias string, ctx *QueryContext) []storage.Row {
+	// Store the aliases in context for use during evaluation
+	joinCtx := &JoinContext{
+		leftAlias:  leftAlias,
+		rightAlias: rightAlias,
+	}
+	ctx.currentJoinContext = joinCtx
+	
+	result := performJoin(leftRows, rightRows, joinExpr, ctx)
+	
+	// Clear join context after use
+	ctx.currentJoinContext = nil
+	
+	return result
 }
 
 func performJoin(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr, ctx *QueryContext) []storage.Row {
@@ -273,9 +338,122 @@ func performJoin(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr,
 }
 
 func evaluateJoinCondition(leftRow, rightRow storage.Row, condition *pg_query.Node, ctx *QueryContext) bool {
-	// Create a merged row for evaluation
-	mergedRow := mergeRows(leftRow, rightRow)
-	return evaluatePgWhere(mergedRow, condition)
+	// For JOIN conditions, we need to handle qualified column references specially
+	return evaluateQualifiedExpr(leftRow, rightRow, condition, ctx)
+}
+
+// evaluateQualifiedExpr handles expressions with table-qualified column references
+func evaluateQualifiedExpr(leftRow, rightRow storage.Row, expr *pg_query.Node, ctx *QueryContext) bool {
+	switch e := expr.Node.(type) {
+	case *pg_query.Node_AExpr:
+		return evaluateQualifiedAExpr(leftRow, rightRow, e.AExpr, ctx)
+	case *pg_query.Node_BoolExpr:
+		return evaluateQualifiedBoolExpr(leftRow, rightRow, e.BoolExpr, ctx)
+	default:
+		// Fall back to regular evaluation on merged row
+		mergedRow := mergeRows(leftRow, rightRow)
+		return evaluatePgWhere(mergedRow, expr)
+	}
+}
+
+func evaluateQualifiedAExpr(leftRow, rightRow storage.Row, expr *pg_query.A_Expr, ctx *QueryContext) bool {
+	// Extract values from qualified column references
+	leftVal := extractQualifiedValue(leftRow, rightRow, expr.Lexpr, ctx)
+	rightVal := extractQualifiedValue(leftRow, rightRow, expr.Rexpr, ctx)
+	
+	// Get operator
+	opName := ""
+	if len(expr.Name) > 0 {
+		if str, ok := expr.Name[0].Node.(*pg_query.Node_String_); ok {
+			opName = str.String_.Sval
+		}
+	}
+	
+	return compareValuesPg(leftVal, opName, rightVal)
+}
+
+func evaluateQualifiedBoolExpr(leftRow, rightRow storage.Row, expr *pg_query.BoolExpr, ctx *QueryContext) bool {
+	switch expr.Boolop {
+	case pg_query.BoolExprType_AND_EXPR:
+		for _, arg := range expr.Args {
+			if !evaluateQualifiedExpr(leftRow, rightRow, arg, ctx) {
+				return false
+			}
+		}
+		return true
+	case pg_query.BoolExprType_OR_EXPR:
+		for _, arg := range expr.Args {
+			if evaluateQualifiedExpr(leftRow, rightRow, arg, ctx) {
+				return true
+			}
+		}
+		return false
+	case pg_query.BoolExprType_NOT_EXPR:
+		if len(expr.Args) > 0 {
+			return !evaluateQualifiedExpr(leftRow, rightRow, expr.Args[0], ctx)
+		}
+		return true
+	}
+	return true
+}
+
+func extractQualifiedValue(leftRow, rightRow storage.Row, node *pg_query.Node, ctx *QueryContext) interface{} {
+	if node == nil {
+		return nil
+	}
+	
+	switch n := node.Node.(type) {
+	case *pg_query.Node_ColumnRef:
+		// Handle qualified column references (table.column)
+		if len(n.ColumnRef.Fields) >= 2 {
+			// table.column format
+			tableName := ""
+			columnName := ""
+			
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				tableName = str.String_.Sval
+			}
+			if str, ok := n.ColumnRef.Fields[1].Node.(*pg_query.Node_String_); ok {
+				columnName = str.String_.Sval
+			}
+			
+			// Check which row to use based on table name/alias
+			if ctx.currentJoinContext != nil {
+				if tableName == ctx.currentJoinContext.leftAlias {
+					if val, exists := leftRow[columnName]; exists {
+						return val
+					}
+				} else if tableName == ctx.currentJoinContext.rightAlias {
+					if val, exists := rightRow[columnName]; exists {
+						return val
+					}
+				}
+			} else {
+				// Fallback to checking both rows
+				if val, exists := leftRow[columnName]; exists {
+					return val
+				}
+				if val, exists := rightRow[columnName]; exists {
+					return val
+				}
+			}
+		} else if len(n.ColumnRef.Fields) == 1 {
+			// Unqualified column - check both rows
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				columnName := str.String_.Sval
+				// First check left row, then right row
+				if val, exists := leftRow[columnName]; exists {
+					return val
+				}
+				if val, exists := rightRow[columnName]; exists {
+					return val
+				}
+			}
+		}
+	case *pg_query.Node_AConst:
+		return extractAConstValue(n.AConst)
+	}
+	return nil
 }
 
 func mergeRows(left, right storage.Row) storage.Row {
@@ -829,9 +1007,127 @@ func filterResultRows(rows [][]interface{}, columns []string, havingClause *pg_q
 }
 
 func sortRows(rows [][]interface{}, columns []string, sortClause []*pg_query.Node) [][]interface{} {
-	// Simplified sorting implementation
-	// In a real implementation, this would properly handle multiple sort keys and directions
-	return rows
+	if len(sortClause) == 0 || len(rows) == 0 {
+		return rows
+	}
+	
+	// Create a copy of rows to avoid modifying the original
+	result := make([][]interface{}, len(rows))
+	copy(result, rows)
+	
+	// Sort using all sort clauses
+	sort.Slice(result, func(i, j int) bool {
+		// Compare using each sort clause in order
+		for _, sortNode := range sortClause {
+			if sortBy, ok := sortNode.Node.(*pg_query.Node_SortBy); ok {
+				// Extract the column to sort by
+				var colIndex int = -1
+				var colName string
+				
+				if sortBy.SortBy.Node != nil {
+					switch n := sortBy.SortBy.Node.Node.(type) {
+					case *pg_query.Node_ColumnRef:
+						// Get column name from the reference
+						if len(n.ColumnRef.Fields) > 0 {
+							if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+								colName = str.String_.Sval
+							}
+						}
+					case *pg_query.Node_AConst:
+						// Handle ORDER BY position (e.g., ORDER BY 1)
+						if val, ok := n.AConst.Val.(*pg_query.A_Const_Ival); ok {
+							colIndex = int(val.Ival.Ival) - 1 // PostgreSQL uses 1-based indexing
+						}
+					}
+				}
+				
+				// Find column index if we have a column name
+				if colName != "" {
+					for idx, col := range columns {
+						if col == colName {
+							colIndex = idx
+							break
+						}
+					}
+				}
+				
+				// Skip if column not found
+				if colIndex < 0 || colIndex >= len(columns) {
+					continue
+				}
+				
+				// Get values to compare
+				var val1, val2 interface{}
+				if colIndex < len(result[i]) {
+					val1 = result[i][colIndex]
+				}
+				if colIndex < len(result[j]) {
+					val2 = result[j][colIndex]
+				}
+				
+				// Handle NULLs according to NULLS FIRST/LAST
+				nullsFirst := sortBy.SortBy.SortbyNulls == pg_query.SortByNulls_SORTBY_NULLS_FIRST
+				if sortBy.SortBy.SortbyNulls == pg_query.SortByNulls_SORTBY_NULLS_DEFAULT {
+					// Default: NULLS LAST for ASC, NULLS FIRST for DESC
+					nullsFirst = sortBy.SortBy.SortbyDir == pg_query.SortByDir_SORTBY_DESC
+				}
+				
+				if val1 == nil && val2 == nil {
+					continue // Both NULL, check next sort clause
+				}
+				if val1 == nil {
+					return nullsFirst // NULL vs non-NULL
+				}
+				if val2 == nil {
+					return !nullsFirst // non-NULL vs NULL
+				}
+				
+				// Compare non-NULL values
+				cmp := compareForSort(val1, val2)
+				if cmp == 0 {
+					continue // Equal, check next sort clause
+				}
+				
+				// Apply sort direction
+				if sortBy.SortBy.SortbyDir == pg_query.SortByDir_SORTBY_DESC {
+					return cmp > 0
+				}
+				return cmp < 0
+			}
+		}
+		return false // All sort clauses resulted in equality
+	})
+	
+	return result
+}
+
+// compareForSort compares two values for sorting purposes
+// Returns -1 if val1 < val2, 0 if equal, 1 if val1 > val2
+func compareForSort(val1, val2 interface{}) int {
+	// Try to compare as numbers first
+	num1, err1 := toFloat64(val1)
+	num2, err2 := toFloat64(val2)
+	
+	if err1 == nil && err2 == nil {
+		// Both are numbers
+		if num1 < num2 {
+			return -1
+		} else if num1 > num2 {
+			return 1
+		}
+		return 0
+	}
+	
+	// Compare as strings
+	str1 := fmt.Sprintf("%v", val1)
+	str2 := fmt.Sprintf("%v", val2)
+	
+	if str1 < str2 {
+		return -1
+	} else if str1 > str2 {
+		return 1
+	}
+	return 0
 }
 
 func applyLimitOffset(rows [][]interface{}, limitCount, limitOffset *pg_query.Node) [][]interface{} {
