@@ -85,7 +85,14 @@ go vet ./...
      - Handles IN/NOT IN clauses with value lists
      - Implements SQL three-valued logic for NULL comparisons
      - IS NULL/IS NOT NULL operators
+     - BETWEEN/NOT BETWEEN operators
+     - LIKE operator with pattern matching
    - `pg_parser_advanced.go`: Advanced features (JOINs, subqueries, aggregations)
+     - All types of JOINs (INNER, LEFT, RIGHT, FULL OUTER, CROSS)
+     - Table aliases and qualified column references
+     - GROUP BY/HAVING with aggregate functions
+     - ORDER BY with LIMIT/OFFSET
+     - Subqueries (IN, NOT IN, partial EXISTS support)
    - Uses `github.com/pganalyze/pg_query_go/v5` for PostgreSQL-compatible parsing
 
 3. **Server Module** (`server/`)
@@ -136,32 +143,26 @@ go vet ./...
 - Subqueries: IN with subqueries
 - DISTINCT queries
 - Column ordering consistency (from CREATE TABLE + dynamic columns)
+- BETWEEN / NOT BETWEEN operators
+- LIKE operator (with % and _ wildcards)
+- JOINs: INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN, CROSS JOIN
+- ORDER BY with LIMIT and OFFSET
+- Table aliases and qualified column references (e.g., t1.id)
 
 ### Partially Implemented
-- JOINs: Basic structure exists but needs fixes
-- EXISTS/NOT EXISTS subqueries: Structure exists but needs fixes
-- ORDER BY: Works but LIMIT/OFFSET need fixes
-- Complex WHERE conditions: Most work except LIKE operator
+- EXISTS/NOT EXISTS subqueries: Basic structure exists but correlated subqueries not supported
+- UNION/UNION ALL: Basic structure exists
+- Complex multi-table JOINs: Two-table joins work well, 3+ tables need more testing
 
 ### Not Yet Implemented
-- BETWEEN operator
-- LIKE/ILIKE operators
+- ILIKE operator (case-insensitive LIKE)
 - CASE expressions
 - COALESCE function
 - Window functions
 - CTEs (WITH clause)
-- UNION/UNION ALL
+- Scalar subqueries in SELECT/WHERE
+- Correlated subqueries
 - Transactions
 - Indexes
 - Constraints
 - Data persistence
-
-## Recent Changes
-
-### 2024-01 Updates
-- Added `-c` command-line option for direct query execution
-- Fixed IN clause handling with value lists
-- Fixed NOT IN clause with proper NULL handling
-- Improved SQL test framework to use `-c` option instead of server connection
-- Moved all example queries to test directory with expected values
-- Removed shell test scripts in favor of Go test integration
