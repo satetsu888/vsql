@@ -81,6 +81,31 @@ func TestErrorHandling(t *testing.T) {
 	}
 }
 
+func TestAdvancedQueries(t *testing.T) {
+	// Run advanced_queries_test.sql
+	runSQLFile(t, "test/advanced_queries_test.sql")
+}
+
+func TestBasicAdvanced(t *testing.T) {
+	// Run basic_advanced_test.sql
+	runSQLFile(t, "test/basic_advanced_test.sql")
+}
+
+func TestNullComparisons(t *testing.T) {
+	// Run null_comparisons_test.sql
+	runSQLFile(t, "test/null_comparisons_test.sql")
+}
+
+func TestBasicIntegration(t *testing.T) {
+	// Run basic_integration_test.sql
+	runSQLFile(t, "test/basic_integration_test.sql")
+}
+
+func TestEnhancedIntegration(t *testing.T) {
+	// Run enhanced_integration_test.sql
+	runSQLFile(t, "test/enhanced_integration_test.sql")
+}
+
 func runSQLFile(t *testing.T, filePath string) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
