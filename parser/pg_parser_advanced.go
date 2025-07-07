@@ -46,6 +46,11 @@ func executePgSelectAdvanced(stmt *pg_query.SelectStmt, dataStore *storage.DataS
 		aggregations: make(map[string]interface{}),
 	}
 
+	// Handle UNION/INTERSECT/EXCEPT queries
+	if stmt.Op != pg_query.SetOperation_SETOP_NONE {
+		return executeSetOperation(stmt, dataStore, metaStore)
+	}
+
 	// Handle FROM clause (including JOINs and subqueries)
 	rows, err := processFromClause(ctx, stmt.FromClause)
 	if err != nil {
@@ -904,4 +909,118 @@ func rowToKey(row []interface{}) string {
 		}
 	}
 	return strings.Join(parts, "\x01")
+}
+
+func executeSetOperation(stmt *pg_query.SelectStmt, dataStore *storage.DataStore, metaStore *storage.MetaStore) ([]string, [][]interface{}, string, error) {
+	// Execute left side query
+	var leftColumns []string
+	var leftRows [][]interface{}
+	var err error
+	
+	if stmt.Larg != nil {
+		leftColumns, leftRows, _, err = executePgSelectAdvanced(stmt.Larg, dataStore, metaStore)
+		if err != nil {
+			return nil, nil, "", err
+		}
+	}
+	
+	// Execute right side query
+	var rightColumns []string
+	var rightRows [][]interface{}
+	
+	if stmt.Rarg != nil {
+		rightColumns, rightRows, _, err = executePgSelectAdvanced(stmt.Rarg, dataStore, metaStore)
+		if err != nil {
+			return nil, nil, "", err
+		}
+	}
+	
+	// Validate column counts match
+	if len(leftColumns) != len(rightColumns) {
+		return nil, nil, "", fmt.Errorf("each UNION query must have the same number of columns")
+	}
+	
+	// Use column names from the first query
+	columns := leftColumns
+	
+	// Perform set operation based on type
+	var resultRows [][]interface{}
+	
+	switch stmt.Op {
+	case pg_query.SetOperation_SETOP_UNION:
+		// UNION removes duplicates (UNION ALL would keep them)
+		if stmt.All {
+			// UNION ALL - keep all rows
+			resultRows = append(resultRows, leftRows...)
+			resultRows = append(resultRows, rightRows...)
+		} else {
+			// UNION - remove duplicates
+			seen := make(map[string]bool)
+			
+			// Add left rows
+			for _, row := range leftRows {
+				key := rowToKey(row)
+				if !seen[key] {
+					seen[key] = true
+					resultRows = append(resultRows, row)
+				}
+			}
+			
+			// Add right rows
+			for _, row := range rightRows {
+				key := rowToKey(row)
+				if !seen[key] {
+					seen[key] = true
+					resultRows = append(resultRows, row)
+				}
+			}
+		}
+		
+	case pg_query.SetOperation_SETOP_INTERSECT:
+		// INTERSECT - only rows in both
+		leftSet := make(map[string]bool)
+		for _, row := range leftRows {
+			leftSet[rowToKey(row)] = true
+		}
+		
+		seen := make(map[string]bool)
+		for _, row := range rightRows {
+			key := rowToKey(row)
+			if leftSet[key] && !seen[key] {
+				seen[key] = true
+				resultRows = append(resultRows, row)
+			}
+		}
+		
+	case pg_query.SetOperation_SETOP_EXCEPT:
+		// EXCEPT - rows in left but not in right
+		rightSet := make(map[string]bool)
+		for _, row := range rightRows {
+			rightSet[rowToKey(row)] = true
+		}
+		
+		seen := make(map[string]bool)
+		for _, row := range leftRows {
+			key := rowToKey(row)
+			if !rightSet[key] && !seen[key] {
+				seen[key] = true
+				resultRows = append(resultRows, row)
+			}
+		}
+		
+	default:
+		return nil, nil, "", fmt.Errorf("unsupported set operation")
+	}
+	
+	// Apply ORDER BY if present
+	if len(stmt.SortClause) > 0 {
+		resultRows = sortRows(resultRows, columns, stmt.SortClause)
+	}
+	
+	// Apply LIMIT and OFFSET if present
+	if stmt.LimitCount != nil || stmt.LimitOffset != nil {
+		resultRows = applyLimitOffset(resultRows, stmt.LimitCount, stmt.LimitOffset)
+	}
+	
+	return columns, resultRows, fmt.Sprintf("SELECT %d", len(resultRows)), nil
 }

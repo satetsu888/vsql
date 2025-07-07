@@ -88,6 +88,11 @@ func needsAdvancedProcessing(stmt *pg_query.SelectStmt) bool {
 		return true
 	}
 	
+	// Check for UNION/INTERSECT/EXCEPT (SetOp)
+	if stmt.Op != pg_query.SetOperation_SETOP_NONE {
+		return true
+	}
+	
 	// Check for JOINs
 	if len(stmt.FromClause) > 0 {
 		if _, ok := stmt.FromClause[0].Node.(*pg_query.Node_JoinExpr); ok {
