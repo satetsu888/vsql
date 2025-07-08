@@ -21,54 +21,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func TestNullHandling(t *testing.T) {
-	// Run null_handling_test.sql
-	runSQLFile(t, "test/null_handling_test.sql")
-}
-
-func TestTypeComparison(t *testing.T) {
-	// Run type_comparison_test.sql
-	runSQLFile(t, "test/type_comparison_test.sql")
-}
-
-func TestComplexQueries(t *testing.T) {
-	// Run complex_queries_test.sql if it exists
-	if _, err := os.Stat("test/complex_queries_test.sql"); err == nil {
-		runSQLFile(t, "test/complex_queries_test.sql")
-	}
-}
-
-func TestErrorHandling(t *testing.T) {
-	// Run error_handling_test.sql if it exists
-	if _, err := os.Stat("test/error_handling_test.sql"); err == nil {
-		runSQLFile(t, "test/error_handling_test.sql")
-	}
-}
-
-func TestAdvancedQueries(t *testing.T) {
-	// Run advanced_queries_test.sql
-	runSQLFile(t, "test/advanced_queries_test.sql")
-}
-
-func TestBasicAdvanced(t *testing.T) {
-	// Run basic_advanced_test.sql
-	runSQLFile(t, "test/basic_advanced_test.sql")
-}
-
-func TestNullComparisons(t *testing.T) {
-	// Run null_comparisons_test.sql
-	runSQLFile(t, "test/null_comparisons_test.sql")
-}
-
-func TestBasicIntegration(t *testing.T) {
-	// Run basic_integration_test.sql
-	runSQLFile(t, "test/basic_integration_test.sql")
-}
-
-func TestEnhancedIntegration(t *testing.T) {
-	// Run enhanced_integration_test.sql
-	runSQLFile(t, "test/enhanced_integration_test.sql")
-}
+// NOTE: These tests have been replaced by TestIndividualSQLFiles
+// which runs individual SQL test files from test/sql/* directories
 
 func runSQLFile(t *testing.T, filePath string) {
 	content, err := os.ReadFile(filePath)

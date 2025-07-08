@@ -1,0 +1,25 @@
+-- Test 8: Sorting by numeric column
+-- Expected: sorted numerically (1,2,10,20,100)
+-- Bug result: sorted as strings (1,10,100,2,20)
+-- Status: FAILING
+
+-- Setup
+CREATE TABLE numeric_test (
+    id INTEGER,
+    price DECIMAL,
+    name TEXT,
+    quantity INTEGER
+);
+
+INSERT INTO numeric_test (id, price, name, quantity) VALUES
+    (1, 9.99, 'Item A', 100),
+    (2, 10.01, 'Item B', 20),
+    (10, 2.50, 'Item C', 5),
+    (100, 99.99, 'Item D', 1000),
+    (20, 5.00, 'Item E', 200);
+
+-- Test Query
+SELECT id FROM numeric_test ORDER BY id;
+
+-- Cleanup
+DROP TABLE numeric_test;
