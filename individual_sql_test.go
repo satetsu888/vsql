@@ -18,16 +18,17 @@ func TestIndividualSQLFiles(t *testing.T) {
 
 	// Test categories and their subdirectories
 	testCategories := []string{
-		"advanced_queries",
-		"basic_advanced", 
-		"basic_integration",
-		"comment_handling",
-		"complex_queries",
-		"enhanced_integration",
-		"error_handling",
-		"null_comparisons",
+		"crud",
+		"joins",
+		"aggregates",
+		"grouping",
+		"subqueries",
 		"null_handling",
-		"type_comparison",
+		"type_conversion",
+		"operators",
+		"ordering",
+		"error_cases",
+		"comments",
 	}
 
 	for _, category := range testCategories {
