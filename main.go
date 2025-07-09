@@ -73,9 +73,82 @@ func main() {
 	}
 }
 
+// splitSQLStatements splits SQL statements by semicolon while respecting comments and string literals
+func splitSQLStatements(sql string) []string {
+	var statements []string
+	var currentStmt strings.Builder
+	inSingleLineComment := false
+	inMultiLineComment := false
+	inSingleQuote := false
+	inDoubleQuote := false
+	
+	runes := []rune(sql)
+	for i := 0; i < len(runes); i++ {
+		char := runes[i]
+		
+		// Check for single-line comment start
+		if !inSingleQuote && !inDoubleQuote && !inMultiLineComment && i+1 < len(runes) && char == '-' && runes[i+1] == '-' {
+			inSingleLineComment = true
+		}
+		
+		// Check for multi-line comment start
+		if !inSingleQuote && !inDoubleQuote && !inSingleLineComment && i+1 < len(runes) && char == '/' && runes[i+1] == '*' {
+			inMultiLineComment = true
+		}
+		
+		// Check for multi-line comment end
+		if inMultiLineComment && i+1 < len(runes) && char == '*' && runes[i+1] == '/' {
+			currentStmt.WriteRune(char)
+			currentStmt.WriteRune(runes[i+1])
+			i++
+			inMultiLineComment = false
+			continue
+		}
+		
+		// Check for newline (ends single-line comment)
+		if char == '\n' {
+			inSingleLineComment = false
+		}
+		
+		// Toggle string literals
+		if !inSingleLineComment && !inMultiLineComment {
+			if char == '\'' && !inDoubleQuote {
+				// Check for escaped quote
+				if i == 0 || runes[i-1] != '\\' {
+					inSingleQuote = !inSingleQuote
+				}
+			} else if char == '"' && !inSingleQuote {
+				// Check for escaped quote
+				if i == 0 || runes[i-1] != '\\' {
+					inDoubleQuote = !inDoubleQuote
+				}
+			}
+		}
+		
+		// Check for statement separator
+		if char == ';' && !inSingleLineComment && !inMultiLineComment && !inSingleQuote && !inDoubleQuote {
+			stmt := currentStmt.String()
+			if strings.TrimSpace(stmt) != "" {
+				statements = append(statements, stmt)
+			}
+			currentStmt.Reset()
+		} else {
+			currentStmt.WriteRune(char)
+		}
+	}
+	
+	// Add the last statement if any
+	stmt := currentStmt.String()
+	if strings.TrimSpace(stmt) != "" {
+		statements = append(statements, stmt)
+	}
+	
+	return statements
+}
+
 func executeCommand(command string, store *storage.DataStore, metaStore *storage.MetaStore) {
-	// Split multiple commands by semicolon
-	commands := strings.Split(command, ";")
+	// Split multiple commands by semicolon, respecting comments
+	commands := splitSQLStatements(command)
 	
 	for _, cmd := range commands {
 		cmd = strings.TrimSpace(cmd)
@@ -86,6 +159,10 @@ func executeCommand(command string, store *storage.DataStore, metaStore *storage
 		// Execute the query
 		columns, rows, message, err := parser.ExecutePgQuery(cmd, store, metaStore)
 		if err != nil {
+			// Skip "no statements found" errors which happen with comment-only segments
+			if err.Error() == "no statements found" {
+				continue
+			}
 			fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
 			os.Exit(1)
 		}

@@ -21,6 +21,7 @@ func TestIndividualSQLFiles(t *testing.T) {
 		"advanced_queries",
 		"basic_advanced", 
 		"basic_integration",
+		"comment_handling",
 		"complex_queries",
 		"enhanced_integration",
 		"error_handling",
@@ -95,22 +96,8 @@ func runIndividualSQLFile(t *testing.T, filePath string) {
 		}
 	}
 
-	// Strip comment lines and empty lines before execution
-	contentLines := strings.Split(string(content), "\n")
-	var sqlLines []string
-	for _, line := range contentLines {
-		trimmed := strings.TrimSpace(line)
-		// Skip comment lines and empty lines
-		if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
-			sqlLines = append(sqlLines, line)
-		}
-	}
-	
-	// Join SQL statements
-	sqlContent := strings.Join(sqlLines, "\n")
-	sqlContent = strings.TrimSpace(sqlContent)
-	
-	cmd := exec.Command("./vsql", "-c", sqlContent)
+	// Use the original content without stripping comments
+	cmd := exec.Command("./vsql", "-c", string(content))
 	output, err := cmd.CombinedOutput()
 
 	// If test is marked as failing, skip validation
