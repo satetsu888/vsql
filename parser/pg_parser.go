@@ -2,10 +2,7 @@ package parser
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
-	"strconv"
-	"strings"
 
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"vsql/storage"
@@ -624,126 +621,10 @@ func extractPgValue(node *pg_query.Node) interface{} {
 	return nil
 }
 
-func extractAConstValue(aConst *pg_query.A_Const) interface{} {
-	if aConst.Isnull {
-		return nil
-	}
+// extractAConstValue is now in pg_parser_utils.go
 
-	switch val := aConst.Val.(type) {
-	case *pg_query.A_Const_Sval:
-		return val.Sval.Sval
-	case *pg_query.A_Const_Ival:
-		return int(val.Ival.Ival)
-	case *pg_query.A_Const_Fval:
-		return val.Fval.Fval
-	}
-	return nil
-}
+// compareValuesPg is now in pg_parser_utils.go
 
-func compareValuesPg(left interface{}, operator string, right interface{}) bool {
-	// SQL three-valued logic: any comparison with NULL returns UNKNOWN (treated as false)
-	// This includes NULL = NULL, which should return UNKNOWN, not true
-	if left == nil || right == nil {
-		return false
-	}
+// toNumber is now in pg_parser_utils.go
 
-	// Try to compare as numbers first
-	leftNum, leftIsNum := toNumber(left)
-	rightNum, rightIsNum := toNumber(right)
-	
-	if leftIsNum && rightIsNum {
-		switch operator {
-		case "=":
-			return leftNum == rightNum
-		case "!=", "<>":
-			return leftNum != rightNum
-		case "<":
-			return leftNum < rightNum
-		case ">":
-			return leftNum > rightNum
-		case "<=":
-			return leftNum <= rightNum
-		case ">=":
-			return leftNum >= rightNum
-		}
-	}
-	
-	// Fall back to string comparison
-	leftStr := fmt.Sprintf("%v", left)
-	rightStr := fmt.Sprintf("%v", right)
-
-	switch operator {
-	case "=":
-		return leftStr == rightStr
-	case "!=", "<>":
-		return leftStr != rightStr
-	case "<":
-		return leftStr < rightStr
-	case ">":
-		return leftStr > rightStr
-	case "<=":
-		return leftStr <= rightStr
-	case ">=":
-		return leftStr >= rightStr
-	case "~~": // LIKE operator in PostgreSQL
-		return matchPattern(leftStr, rightStr)
-	case "!~~": // NOT LIKE operator
-		return !matchPattern(leftStr, rightStr)
-	case "~~*": // ILIKE operator (case-insensitive)
-		return matchPattern(strings.ToLower(leftStr), strings.ToLower(rightStr))
-	case "!~~*": // NOT ILIKE operator
-		return !matchPattern(strings.ToLower(leftStr), strings.ToLower(rightStr))
-	}
-
-	return false
-}
-
-func toNumber(val interface{}) (float64, bool) {
-	switch v := val.(type) {
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case float64:
-		return v, true
-	case string:
-		if num, err := strconv.ParseFloat(v, 64); err == nil {
-			return num, true
-		}
-	}
-	return 0, false
-}
-
-// matchPattern implements SQL LIKE pattern matching
-// % matches any sequence of characters
-// _ matches any single character
-// \ is the escape character
-func matchPattern(text, pattern string) bool {
-	// Convert SQL pattern to regex pattern
-	regexPattern := ""
-	i := 0
-	for i < len(pattern) {
-		ch := pattern[i]
-		if ch == '\\' && i+1 < len(pattern) {
-			// Escape character - add the next character literally
-			i++
-			regexPattern += regexp.QuoteMeta(string(pattern[i]))
-		} else if ch == '%' {
-			regexPattern += ".*"
-		} else if ch == '_' {
-			regexPattern += "."
-		} else {
-			regexPattern += regexp.QuoteMeta(string(ch))
-		}
-		i++
-	}
-	
-	// Anchor the pattern to match the entire string
-	regexPattern = "^" + regexPattern + "$"
-	
-	matched, err := regexp.MatchString(regexPattern, text)
-	if err != nil {
-		return false
-	}
-	return matched
-}
+// matchPattern is now in pg_parser_utils.go

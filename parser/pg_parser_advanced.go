@@ -3,7 +3,6 @@ package parser
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	pg_query "github.com/pganalyze/pg_query_go/v5"
@@ -637,7 +636,7 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 		for _, subRow := range subRows {
 			// Get the first column value from subquery result
 			for _, val := range subRow {
-				if compareValues(fmt.Sprintf("%v", testValue), "=", val) {
+				if compareValuesPg(fmt.Sprintf("%v", testValue), "=", val) {
 					return false
 				}
 				break // Only check first column
@@ -669,7 +668,7 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 				if val == nil {
 					continue
 				}
-				if compareValues(fmt.Sprintf("%v", testValue), "=", val) {
+				if compareValuesPg(fmt.Sprintf("%v", testValue), "=", val) {
 					return true
 				}
 				break // Only check first column
@@ -905,19 +904,19 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 		switch val := resTarget.Val.Node.(type) {
 		case *pg_query.Node_FuncCall:
 			// Check if it's an aggregate function
-			funcName := strings.ToUpper(val.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+			funcName := getFunctionName(val.FuncCall)
 			if isAggregateFunction(funcName) {
 				// Handle aggregate functions
 				result := evaluateAggregateFunction(val.FuncCall, groupRows)
 				if colName == "" {
-					colName = strings.ToLower(val.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+					colName = strings.ToLower(funcName)
 				}
 				return result, colName
 			} else {
 				// Handle scalar functions
 				result := evaluateScalarFunction(val.FuncCall, currentRow, ctx)
 				if colName == "" {
-					colName = strings.ToLower(val.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+					colName = strings.ToLower(funcName)
 				}
 				return result, colName
 			}
@@ -959,21 +958,14 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 	return nil, colName
 }
 
-func isAggregateFunction(funcName string) bool {
-	switch funcName {
-	case "COUNT", "SUM", "AVG", "MAX", "MIN":
-		return true
-	default:
-		return false
-	}
-}
+// isAggregateFunction is now in pg_parser_utils.go
 
 func evaluateScalarFunction(funcCall *pg_query.FuncCall, row storage.Row, ctx *QueryContext) interface{} {
 	if len(funcCall.Funcname) == 0 {
 		return nil
 	}
 	
-	funcName := strings.ToUpper(funcCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+	funcName := getFunctionName(funcCall)
 	
 	switch funcName {
 	case "COALESCE":
@@ -1006,7 +998,7 @@ func evaluateExpression(node *pg_query.Node, row storage.Row, ctx *QueryContext)
 	case *pg_query.Node_AConst:
 		return extractAConstValue(n.AConst)
 	case *pg_query.Node_FuncCall:
-		funcName := strings.ToUpper(n.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+		funcName := getFunctionName(n.FuncCall)
 		if isAggregateFunction(funcName) {
 			// For aggregates in scalar context, we need the group rows
 			// This shouldn't normally happen in a well-formed query
@@ -1022,7 +1014,7 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 		return nil
 	}
 
-	funcName := strings.ToUpper(funcCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+	funcName := getFunctionName(funcCall)
 	
 	// Extract column name for aggregate
 	var colName string
@@ -1106,7 +1098,7 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 		var max interface{}
 		for _, row := range rows {
 			if val := row[colName]; val != nil {
-				if max == nil || compareValues(fmt.Sprintf("%v", val), ">", max) {
+				if max == nil || compareValuesPg(fmt.Sprintf("%v", val), ">", max) {
 					max = val
 				}
 			}
@@ -1117,7 +1109,7 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 		var min interface{}
 		for _, row := range rows {
 			if val := row[colName]; val != nil {
-				if min == nil || compareValues(fmt.Sprintf("%v", val), "<", min) {
+				if min == nil || compareValuesPg(fmt.Sprintf("%v", val), "<", min) {
 					min = val
 				}
 			}
@@ -1138,18 +1130,7 @@ func isStarExpr(node *pg_query.Node) bool {
 	return false
 }
 
-func toFloat64(val interface{}) (float64, error) {
-	switch v := val.(type) {
-	case float64:
-		return v, nil
-	case int:
-		return float64(v), nil
-	case string:
-		return strconv.ParseFloat(v, 64)
-	default:
-		return 0, fmt.Errorf("cannot convert to float64")
-	}
-}
+// toFloat64 is now in pg_parser_utils.go
 
 func extractColumnName(node *pg_query.Node) string {
 	switch n := node.Node.(type) {
@@ -1164,8 +1145,9 @@ func extractColumnName(node *pg_query.Node) string {
 			return parts[len(parts)-1] // Return last part (column name)
 		}
 	case *pg_query.Node_FuncCall:
-		if len(n.FuncCall.Funcname) > 0 {
-			return strings.ToLower(n.FuncCall.Funcname[0].Node.(*pg_query.Node_String_).String_.Sval)
+		funcName := getFunctionName(n.FuncCall)
+		if funcName != "" {
+			return strings.ToLower(funcName)
 		}
 	}
 	return "?column?"
@@ -1380,16 +1362,16 @@ func evaluateAExprWithContext(row storage.Row, expr *pg_query.A_Expr, ctx *Query
 	// Handle different expression kinds
 	switch expr.Kind {
 	case pg_query.A_Expr_Kind_AEXPR_OP:
-		return compareValues(fmt.Sprintf("%v", leftVal), op, rightVal)
+		return compareValuesPg(fmt.Sprintf("%v", leftVal), op, rightVal)
 	case pg_query.A_Expr_Kind_AEXPR_IN:
 		// IN expression is handled by evaluatePgWhere
 		return evaluatePgWhere(row, &pg_query.Node{Node: &pg_query.Node_AExpr{AExpr: expr}})
 	case pg_query.A_Expr_Kind_AEXPR_LIKE:
 		// LIKE expression
-		return compareValues(fmt.Sprintf("%v", leftVal), "~~", rightVal)
+		return compareValuesPg(fmt.Sprintf("%v", leftVal), "~~", rightVal)
 	case pg_query.A_Expr_Kind_AEXPR_ILIKE:
 		// ILIKE expression (case-insensitive)
-		return compareValues(fmt.Sprintf("%v", leftVal), "~~*", rightVal)
+		return compareValuesPg(fmt.Sprintf("%v", leftVal), "~~*", rightVal)
 	default:
 		// For other expression kinds, try to handle them
 		return evaluatePgWhere(row, &pg_query.Node{Node: &pg_query.Node_AExpr{AExpr: expr}})
@@ -1490,10 +1472,6 @@ func extractValueFromNodeWithContext(row storage.Row, node *pg_query.Node, ctx *
 	return nil
 }
 
-func compareValues(left, op string, right interface{}) bool {
-	// Reuse existing comparison logic
-	return compareValuesPg(left, op, right)
-}
 
 func applyDistinct(rows [][]interface{}) [][]interface{} {
 	if len(rows) == 0 {
