@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	pg_query "github.com/pganalyze/pg_query_go/v5"
 	"vsql/storage"
@@ -592,16 +593,35 @@ func extractValueFromExpr(row storage.Row, node *pg_query.Node) interface{} {
 			}
 			
 			// Fall back to unqualified column name
-			return row[columnName]
+			val := row[columnName]
+			return val
 		} else if len(n.ColumnRef.Fields) > 0 {
 			// Unqualified column reference
 			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
-				return row[str.String_.Sval]
+				colName := str.String_.Sval
+				return row[colName]
 			}
 		}
 	case *pg_query.Node_AConst:
 		return extractAConstValue(n.AConst)
+	case *pg_query.Node_FuncCall:
+		// Handle function calls in HAVING context
+		// When we're evaluating HAVING, aggregate results are already computed and stored in the row
+		funcName := getFunctionName(n.FuncCall)
+		
+		if funcName != "" {
+			// Try lowercase version (how aggregates are stored in result rows)
+			lowerFuncName := strings.ToLower(funcName)
+			if val, exists := row[lowerFuncName]; exists {
+				return val
+			}
+			// Also try uppercase version
+			if val, exists := row[funcName]; exists {
+				return val
+			}
+		}
 	}
+	
 	return nil
 }
 

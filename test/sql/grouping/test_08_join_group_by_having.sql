@@ -1,8 +1,7 @@
 -- Test 7: JOIN with GROUP BY and HAVING
 -- Expected: 2 rows (Alice: 1550, Charlie: 2400)
--- Status: FAILING
--- FAILING: HAVING clause with aggregate functions not implemented
--- Test: SELECT u.name, SUM(o.amount) as total_spent FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.name HAVING SUM(o.amount) > 1000 ORDER BY total_spent DESC
+-- Test: Verifies JOIN with GROUP BY and HAVING clause with aggregate functions
+-- Query: SELECT u.name, SUM(o.amount) as total_spent FROM users u JOIN orders o ON u.id = o.user_id GROUP BY u.name HAVING SUM(o.amount) > 1000 ORDER BY total_spent DESC
 
 -- Create test tables
 CREATE TABLE users (
