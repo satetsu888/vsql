@@ -90,13 +90,17 @@ go vet ./...
      - Implements SQL three-valued logic for NULL comparisons
      - IS NULL/IS NOT NULL operators
      - BETWEEN/NOT BETWEEN operators
-     - LIKE operator with pattern matching
+     - LIKE/NOT LIKE operators with pattern matching
    - `pg_parser_advanced.go`: Advanced features (JOINs, subqueries, aggregations)
      - All types of JOINs (INNER, LEFT, RIGHT, FULL OUTER, CROSS)
      - Table aliases and qualified column references
-     - GROUP BY/HAVING with aggregate functions
+     - GROUP BY/HAVING with aggregate functions (including COUNT DISTINCT)
      - ORDER BY with LIMIT/OFFSET
-     - Subqueries (IN, NOT IN, partial EXISTS support)
+     - Subqueries (IN, NOT IN, EXISTS, scalar subqueries in WHERE)
+   - `pg_parser_utils.go`: Shared utility functions
+     - Value conversion and comparison functions
+     - Pattern matching for LIKE operator
+     - Function name extraction and aggregate function detection
    - Uses `github.com/pganalyze/pg_query_go/v5` for PostgreSQL-compatible parsing
 
 3. **Server Module** (`server/`)
@@ -144,17 +148,19 @@ go vet ./...
 - IN clause with value lists (including proper NULL handling)
 - NOT IN clause with value lists (including proper NULL handling)
 - Aggregate functions: COUNT, SUM, AVG, MAX, MIN
+- COUNT(DISTINCT column) - counts unique non-NULL values
 - GROUP BY / HAVING
-- Subqueries: IN with subqueries
+- Subqueries: IN with subqueries, scalar subqueries in WHERE clause
 - DISTINCT queries
 - Column ordering consistency (from CREATE TABLE + dynamic columns)
 - BETWEEN / NOT BETWEEN operators
 - LIKE operator (with % and _ wildcards)
 - NOT LIKE operator
-- JOINs: INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
-- ORDER BY with LIMIT and OFFSET
+- JOINs: INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN, CROSS JOIN
+- ORDER BY with LIMIT and OFFSET (including ORDER BY with aggregates)
 - Table aliases and qualified column references (e.g., t1.id)
 - SQL comments (single-line -- and multi-line /* */)
+- Scalar subqueries in WHERE clause (e.g., WHERE age > (SELECT AVG(age) FROM users))
 
 ### Partially Implemented
 - EXISTS/NOT EXISTS subqueries: Basic structure exists but correlated subqueries not supported
@@ -163,15 +169,35 @@ go vet ./...
 - OFFSET: Basic implementation (test failures indicate partial support)
 
 ### Not Yet Implemented
-- CROSS JOIN
 - ILIKE operator (case-insensitive LIKE)
 - CASE expressions
 - COALESCE function
 - Window functions
 - CTEs (WITH clause)
-- Scalar subqueries in SELECT/WHERE
-- Correlated subqueries
+- Scalar subqueries in SELECT clause
+- Correlated subqueries (for EXISTS and other contexts)
 - Transactions
 - Indexes
 - Constraints
 - Data persistence
+- Foreign keys
+- Views
+- Stored procedures/functions
+
+## Recent Updates (2025-07-10)
+
+### Refactoring
+- Created `pg_parser_utils.go` to consolidate shared utility functions
+- Eliminated duplicate code between `pg_parser.go` and `pg_parser_advanced.go`
+- Reduced overall codebase by ~141 lines while maintaining functionality
+
+### New Features Implemented
+- **NOT LIKE operator**: Pattern matching with negation
+- **LIKE wildcards**: Fixed support for complex patterns with % and _
+- **COUNT(DISTINCT)**: Properly counts unique non-NULL values
+- **CROSS JOIN**: Cartesian product of two tables
+- **Scalar subqueries in WHERE**: Support for comparisons like `WHERE age > (SELECT AVG(age) FROM users)`
+
+### Test Infrastructure
+- Fixed test parser to correctly extract expected row counts from comments
+- Multiple previously failing tests now pass
