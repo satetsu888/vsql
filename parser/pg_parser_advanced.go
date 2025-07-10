@@ -677,12 +677,9 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 		return false
 		
 	case pg_query.SubLinkType_EXPR_SUBLINK:
-		// Scalar subquery
-		if len(subRows) != 1 {
-			return false
-		}
-		// TODO: Implement proper scalar subquery comparison
-		return true
+		// Scalar subquery - should not be handled here
+		// Scalar subqueries are handled directly in extractValueFromNodeWithContext
+		return false
 	}
 	return false
 }
@@ -1468,6 +1465,16 @@ func extractValueFromNodeWithContext(row storage.Row, node *pg_query.Node, ctx *
 		}
 	case *pg_query.Node_AConst:
 		return extractAConstValue(n.AConst)
+	case *pg_query.Node_SubLink:
+		// Handle scalar subquery
+		subRows, err := executeSubquery(n.SubLink.Subselect, ctx)
+		if err != nil || len(subRows) != 1 || len(subRows[0]) == 0 {
+			return nil
+		}
+		// Return the first column of the first row
+		for _, val := range subRows[0] {
+			return val
+		}
 	}
 	return nil
 }

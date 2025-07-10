@@ -1,6 +1,5 @@
 -- Test 11: Scalar subquery comparison
 -- Expected: 2 rows (Bob: 30, Charlie: 35)
--- Status: FAILING - Scalar subqueries in WHERE clause not supported
 
 -- Setup
 CREATE TABLE users (id int, name text, age int, city text);

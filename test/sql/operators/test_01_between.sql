@@ -1,7 +1,5 @@
--- Test 2: Between operator with numbers
+-- Test 1: Between operator with numbers
 -- Expected: 2 rows (id=10,20)
--- Bug result: may include id=100 due to string comparison
--- Status: FAILING
 
 -- Setup
 CREATE TABLE numeric_test (
