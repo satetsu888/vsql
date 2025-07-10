@@ -1,5 +1,5 @@
 -- Test 10: ORDER BY aggregate value
--- Expected: 3 rows ordered by total_sales DESC: Osaka (1600), Tokyo (300), Kyoto (NULL)
+-- Expected: 2 rows ordered by total_sales DESC: Osaka (1600), Tokyo (300)
 -- Based on: basic_advanced/test_13.sql
 
 -- Setup

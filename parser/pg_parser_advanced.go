@@ -237,7 +237,7 @@ func performJoinWithContext(leftRows, rightRows []storage.Row, joinExpr *pg_quer
 	}
 	ctx.currentJoinContext = joinCtx
 	
-	result := performJoin(leftRows, rightRows, joinExpr, ctx)
+	result := performJoinWithAliases(leftRows, rightRows, joinExpr, leftAlias, rightAlias, ctx)
 	
 	// Clear join context after use
 	ctx.currentJoinContext = nil
@@ -246,6 +246,11 @@ func performJoinWithContext(leftRows, rightRows []storage.Row, joinExpr *pg_quer
 }
 
 func performJoin(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr, ctx *QueryContext) []storage.Row {
+	// Delegate to performJoinWithAliases with empty aliases
+	return performJoinWithAliases(leftRows, rightRows, joinExpr, "", "", ctx)
+}
+
+func performJoinWithAliases(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr, leftAlias, rightAlias string, ctx *QueryContext) []storage.Row {
 	var result []storage.Row
 
 	switch joinExpr.Jointype {
@@ -254,7 +259,7 @@ func performJoin(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr,
 		for _, leftRow := range leftRows {
 			for _, rightRow := range rightRows {
 				if joinExpr.Quals == nil || evaluateJoinCondition(leftRow, rightRow, joinExpr.Quals, ctx) {
-					mergedRow := mergeRows(leftRow, rightRow)
+					mergedRow := mergeRowsWithAliases(leftRow, rightRow, leftAlias, rightAlias)
 					result = append(result, mergedRow)
 				}
 			}
@@ -265,7 +270,7 @@ func performJoin(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr,
 			matched := false
 			for _, rightRow := range rightRows {
 				if joinExpr.Quals == nil || evaluateJoinCondition(leftRow, rightRow, joinExpr.Quals, ctx) {
-					mergedRow := mergeRows(leftRow, rightRow)
+					mergedRow := mergeRowsWithAliases(leftRow, rightRow, leftAlias, rightAlias)
 					result = append(result, mergedRow)
 					matched = true
 				}
@@ -285,7 +290,7 @@ func performJoin(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr,
 			matched := false
 			for _, leftRow := range leftRows {
 				if joinExpr.Quals == nil || evaluateJoinCondition(leftRow, rightRow, joinExpr.Quals, ctx) {
-					mergedRow := mergeRows(leftRow, rightRow)
+					mergedRow := mergeRowsWithAliases(leftRow, rightRow, leftAlias, rightAlias)
 					result = append(result, mergedRow)
 					matched = true
 				}
@@ -308,7 +313,7 @@ func performJoin(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr,
 		for i, leftRow := range leftRows {
 			for j, rightRow := range rightRows {
 				if joinExpr.Quals == nil || evaluateJoinCondition(leftRow, rightRow, joinExpr.Quals, ctx) {
-					mergedRow := mergeRows(leftRow, rightRow)
+					mergedRow := mergeRowsWithAliases(leftRow, rightRow, leftAlias, rightAlias)
 					result = append(result, mergedRow)
 					leftMatched[i] = true
 					rightMatched[j] = true
@@ -334,6 +339,16 @@ func performJoin(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr,
 				for k, v := range rightRow {
 					mergedRow[k] = v
 				}
+				result = append(result, mergedRow)
+			}
+		}
+	default:
+		// Handle other join types including CROSS JOIN
+		// For CROSS JOIN, we join every row from left with every row from right
+		// without any join condition
+		for _, leftRow := range leftRows {
+			for _, rightRow := range rightRows {
+				mergedRow := mergeRowsWithAliases(leftRow, rightRow, leftAlias, rightAlias)
 				result = append(result, mergedRow)
 			}
 		}
@@ -469,6 +484,39 @@ func mergeRows(left, right storage.Row) storage.Row {
 	for k, v := range right {
 		merged[k] = v
 	}
+	return merged
+}
+
+func mergeRowsWithAliases(left, right storage.Row, leftAlias, rightAlias string) storage.Row {
+	merged := make(storage.Row)
+	
+	// Check for column conflicts
+	conflicts := make(map[string]bool)
+	for k := range left {
+		if _, exists := right[k]; exists {
+			conflicts[k] = true
+		}
+	}
+	
+	// Add left row columns
+	for k, v := range left {
+		if conflicts[k] && leftAlias != "" {
+			// Prefix with alias for conflicting columns
+			merged[leftAlias+"."+k] = v
+		}
+		merged[k] = v
+	}
+	
+	// Add right row columns
+	for k, v := range right {
+		if conflicts[k] && rightAlias != "" {
+			// Prefix with alias for conflicting columns
+			merged[rightAlias+"."+k] = v
+		} else {
+			merged[k] = v
+		}
+	}
+	
 	return merged
 }
 
@@ -1000,13 +1048,32 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 		if colName == "" || (len(funcCall.Args) > 0 && isStarExpr(funcCall.Args[0])) {
 			return len(rows)
 		}
-		count := 0
-		for _, row := range rows {
-			if row[colName] != nil {
-				count++
+		
+		if funcCall.AggDistinct {
+			// COUNT(DISTINCT column)
+			seen := make(map[string]bool)
+			count := 0
+			for _, row := range rows {
+				val := row[colName]
+				if val != nil {
+					key := fmt.Sprintf("%v", val)
+					if !seen[key] {
+						seen[key] = true
+						count++
+					}
+				}
 			}
+			return count
+		} else {
+			// Regular COUNT(column)
+			count := 0
+			for _, row := range rows {
+				if row[colName] != nil {
+					count++
+				}
+			}
+			return count
 		}
-		return count
 
 	case "SUM":
 		var sum float64
@@ -1317,8 +1384,15 @@ func evaluateAExprWithContext(row storage.Row, expr *pg_query.A_Expr, ctx *Query
 	case pg_query.A_Expr_Kind_AEXPR_IN:
 		// IN expression is handled by evaluatePgWhere
 		return evaluatePgWhere(row, &pg_query.Node{Node: &pg_query.Node_AExpr{AExpr: expr}})
+	case pg_query.A_Expr_Kind_AEXPR_LIKE:
+		// LIKE expression
+		return compareValues(fmt.Sprintf("%v", leftVal), "~~", rightVal)
+	case pg_query.A_Expr_Kind_AEXPR_ILIKE:
+		// ILIKE expression (case-insensitive)
+		return compareValues(fmt.Sprintf("%v", leftVal), "~~*", rightVal)
 	default:
-		return true
+		// For other expression kinds, try to handle them
+		return evaluatePgWhere(row, &pg_query.Node{Node: &pg_query.Node_AExpr{AExpr: expr}})
 	}
 }
 
@@ -1376,7 +1450,13 @@ func extractValueFromNodeWithContext(row storage.Row, node *pg_query.Node, ctx *
 				columnName = str.String_.Sval
 			}
 			
-			// First check if this refers to a table in the subquery
+			// First try the qualified column name (table.column)
+			qualifiedName := tableName + "." + columnName
+			if val, exists := row[qualifiedName]; exists {
+				return val
+			}
+			
+			// Then check if this refers to a table in the context
 			if _, exists := ctx.tables[tableName]; exists {
 				// This is a table from the subquery, use the current row
 				if val, exists := row[columnName]; exists {

@@ -72,10 +72,8 @@ func runIndividualSQLFile(t *testing.T, filePath string) {
 			
 			// Check for expected row count
 			if strings.Contains(comment, "Expected:") {
-				if strings.Contains(comment, "0 rows") || strings.Contains(comment, "no rows") {
-					expectedRows = 0
-				} else if strings.Contains(comment, " rows") {
-					// Extract number
+				if strings.Contains(comment, " rows") {
+					// Extract number before "rows"
 					parts := strings.Fields(comment)
 					for i, part := range parts {
 						if part == "rows" && i > 0 {
@@ -85,6 +83,8 @@ func runIndividualSQLFile(t *testing.T, filePath string) {
 							}
 						}
 					}
+				} else if strings.Contains(comment, "no rows") {
+					expectedRows = 0
 				} else if strings.Contains(comment, "error") || strings.Contains(comment, "fail") {
 					expectError = true
 				}

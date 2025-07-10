@@ -576,12 +576,29 @@ func extractValueFromExpr(row storage.Row, node *pg_query.Node) interface{} {
 	switch n := node.Node.(type) {
 	case *pg_query.Node_ColumnRef:
 		// Handle qualified (table.column) and unqualified (column) references
-		if len(n.ColumnRef.Fields) > 0 {
-			// Get the last field as the column name
-			// For "table.column", fields[0] is table, fields[1] is column
-			// For "column", fields[0] is column
-			lastField := n.ColumnRef.Fields[len(n.ColumnRef.Fields)-1]
-			if str, ok := lastField.Node.(*pg_query.Node_String_); ok {
+		if len(n.ColumnRef.Fields) >= 2 {
+			// Qualified column reference (table.column)
+			tableName := ""
+			columnName := ""
+			
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				tableName = str.String_.Sval
+			}
+			if str, ok := n.ColumnRef.Fields[1].Node.(*pg_query.Node_String_); ok {
+				columnName = str.String_.Sval
+			}
+			
+			// First try the qualified column name
+			qualifiedName := tableName + "." + columnName
+			if val, exists := row[qualifiedName]; exists {
+				return val
+			}
+			
+			// Fall back to unqualified column name
+			return row[columnName]
+		} else if len(n.ColumnRef.Fields) > 0 {
+			// Unqualified column reference
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
 				return row[str.String_.Sval]
 			}
 		}
