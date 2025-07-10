@@ -34,23 +34,26 @@ go build -o vsql
 # Run all tests
 go test -v
 
-# Run specific test suite
-go test -v -run TestNullHandling
-go test -v -run TestTypeComparison
+# Run specific test category
+go test -v -run TestIndividualSQLFiles/crud
+go test -v -run TestIndividualSQLFiles/joins
+go test -v -run TestIndividualSQLFiles/null_handling
 
 # Run tests with coverage
 go test -v -cover
 
-# Test files are located in test/ directory:
-# - null_handling_test.sql          # NULL value handling tests
-# - null_comparisons_test.sql       # Basic NULL comparison tests
-# - type_comparison_test.sql        # Type conversion and comparison tests
-# - complex_queries_test.sql        # Advanced SQL features (JOINs, subqueries)
-# - error_handling_test.sql         # Error cases and edge conditions
-# - advanced_queries_test.sql       # Comprehensive advanced SQL tests
-# - basic_advanced_test.sql         # Basic to intermediate SQL tests
-# - basic_integration_test.sql      # Basic integration tests
-# - enhanced_integration_test.sql   # Comprehensive integration tests
+# Test files are organized by feature in test/sql/ directory:
+# - crud/              # Basic CRUD operations (CREATE, INSERT, SELECT, UPDATE, DELETE)
+# - joins/             # All JOIN types (INNER, LEFT, RIGHT, FULL OUTER, CROSS)
+# - aggregates/        # Aggregate functions (COUNT, SUM, AVG, MAX, MIN)
+# - grouping/          # GROUP BY, HAVING, DISTINCT operations
+# - subqueries/        # Subqueries (IN, EXISTS, correlated, scalar)
+# - null_handling/     # Comprehensive NULL value tests
+# - type_conversion/   # Type conversion and comparison tests
+# - operators/         # SQL operators (BETWEEN, LIKE, IN/NOT IN)
+# - ordering/          # ORDER BY, LIMIT, OFFSET tests
+# - error_cases/       # Error handling and edge cases
+# - comments/          # SQL comment handling tests
 
 # Manual testing with psql
 psql -h localhost -p 5432 -U any_user -d any_database
@@ -79,6 +82,7 @@ go vet ./...
    - Command-line interface with `-port`, `-c`, and `-h` options
    - Can run as server or execute queries directly
    - Supports executing multiple SQL statements separated by semicolons
+   - Intelligent SQL statement splitter that respects comments and string literals
 
 2. **Parser Module** (`parser/`)
    - `pg_parser.go`: Basic SQL operations (CREATE, INSERT, SELECT, UPDATE, DELETE, DROP)
@@ -105,10 +109,11 @@ go vet ./...
    - `metastore.go`: Metadata storage for table schemas and column ordering
    - Schema-less design: rows are `map[string]interface{}`, non-existent columns return NULL
 
-5. **Test Module** (`sql_integration_test.go`)
+5. **Test Module** (`individual_sql_test.go`)
    - Automated test runner using `-c` option for direct query execution
-   - Parses SQL test files from `test/` directory
+   - Parses SQL test files from `test/sql/` directory
    - Validates expected row counts and error conditions
+   - Preserves SQL comments during testing for accurate validation
 
 ### Request Flow
 
@@ -145,16 +150,20 @@ go vet ./...
 - Column ordering consistency (from CREATE TABLE + dynamic columns)
 - BETWEEN / NOT BETWEEN operators
 - LIKE operator (with % and _ wildcards)
-- JOINs: INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN, CROSS JOIN
+- NOT LIKE operator
+- JOINs: INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
 - ORDER BY with LIMIT and OFFSET
 - Table aliases and qualified column references (e.g., t1.id)
+- SQL comments (single-line -- and multi-line /* */)
 
 ### Partially Implemented
 - EXISTS/NOT EXISTS subqueries: Basic structure exists but correlated subqueries not supported
 - UNION/UNION ALL: Basic structure exists
 - Complex multi-table JOINs: Two-table joins work well, 3+ tables need more testing
+- OFFSET: Basic implementation (test failures indicate partial support)
 
 ### Not Yet Implemented
+- CROSS JOIN
 - ILIKE operator (case-insensitive LIKE)
 - CASE expressions
 - COALESCE function
