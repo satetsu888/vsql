@@ -25,6 +25,9 @@ go build -o vsql
 # Execute multiple queries
 ./vsql -c "CREATE TABLE users (id int, name text); INSERT INTO users VALUES (1, 'Alice');"
 
+# Execute SQL from file
+./vsql -f queries.sql
+
 # Show help
 ./vsql -h
 ```
@@ -79,10 +82,11 @@ go vet ./...
 ### Core Components
 
 1. **Main Module** (`main.go`)
-   - Command-line interface with `-port`, `-c`, and `-h` options
+   - Command-line interface with `-port`, `-c`, `-f`, and `-h` options
    - Can run as server or execute queries directly
    - Supports executing multiple SQL statements separated by semicolons
    - Intelligent SQL statement splitter that respects comments and string literals
+   - `-f` option to execute SQL from files
 
 2. **Parser Module** (`parser/`)
    - `pg_parser.go`: Basic SQL operations (CREATE, INSERT, SELECT, UPDATE, DELETE, DROP)
@@ -93,10 +97,11 @@ go vet ./...
      - LIKE/NOT LIKE operators with pattern matching
    - `pg_parser_advanced.go`: Advanced features (JOINs, subqueries, aggregations)
      - All types of JOINs (INNER, LEFT, RIGHT, FULL OUTER, CROSS)
+     - Multi-table JOINs (3+ tables) with proper qualified column resolution
      - Table aliases and qualified column references
      - GROUP BY/HAVING with aggregate functions (including COUNT DISTINCT)
      - ORDER BY with LIMIT/OFFSET
-     - Subqueries (IN, NOT IN, EXISTS, scalar subqueries in WHERE)
+     - Subqueries (IN, NOT IN, EXISTS, scalar subqueries in SELECT and WHERE)
    - `pg_parser_utils.go`: Shared utility functions
      - Value conversion and comparison functions
      - Pattern matching for LIKE operator
@@ -165,7 +170,7 @@ go vet ./...
 ### Partially Implemented
 - EXISTS/NOT EXISTS subqueries: Basic structure exists but correlated subqueries not supported
 - UNION/UNION ALL: Basic structure exists
-- Complex multi-table JOINs: Two-table joins work well, 3+ tables need more testing
+- HAVING clause with aggregate functions: Basic structure exists but re-evaluation of aggregates not supported
 - OFFSET: Basic implementation (test failures indicate partial support)
 
 ### Not Yet Implemented
@@ -182,21 +187,3 @@ go vet ./...
 - Foreign keys
 - Views
 - Stored procedures/functions
-
-## Recent Updates (2025-07-10)
-
-### Refactoring
-- Created `pg_parser_utils.go` to consolidate shared utility functions
-- Eliminated duplicate code between `pg_parser.go` and `pg_parser_advanced.go`
-- Reduced overall codebase by ~141 lines while maintaining functionality
-
-### New Features Implemented
-- **NOT LIKE operator**: Pattern matching with negation
-- **LIKE wildcards**: Fixed support for complex patterns with % and _
-- **COUNT(DISTINCT)**: Properly counts unique non-NULL values
-- **CROSS JOIN**: Cartesian product of two tables
-- **Scalar subqueries in WHERE**: Support for comparisons like `WHERE age > (SELECT AVG(age) FROM users)`
-
-### Test Infrastructure
-- Fixed test parser to correctly extract expected row counts from comments
-- Multiple previously failing tests now pass

@@ -17,10 +17,12 @@ import (
 func main() {
 	var port int
 	var command string
+	var filePath string
 	var help bool
 	
 	flag.IntVar(&port, "port", 5432, "Port to listen on")
 	flag.StringVar(&command, "c", "", "Execute command and exit")
+	flag.StringVar(&filePath, "f", "", "Execute SQL from file and exit")
 	flag.BoolVar(&help, "h", false, "Show help")
 	flag.BoolVar(&help, "help", false, "Show help")
 	flag.Parse()
@@ -32,6 +34,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -port PORT    Port to listen on (default: 5432)\n")
 		fmt.Fprintf(os.Stderr, "  -c COMMAND    Execute command and exit\n")
+		fmt.Fprintf(os.Stderr, "  -f FILE       Execute SQL from file and exit\n")
 		fmt.Fprintf(os.Stderr, "  -h, -help     Show this help message\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  # Start server on default port\n")
@@ -41,7 +44,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  # Execute query and exit\n")
 		fmt.Fprintf(os.Stderr, "  vsql -c \"SELECT * FROM users;\"\n\n")
 		fmt.Fprintf(os.Stderr, "  # Execute multiple queries\n")
-		fmt.Fprintf(os.Stderr, "  vsql -c \"CREATE TABLE users (id int, name text); INSERT INTO users VALUES (1, 'Alice');\"\n")
+		fmt.Fprintf(os.Stderr, "  vsql -c \"CREATE TABLE users (id int, name text); INSERT INTO users VALUES (1, 'Alice');\"\n\n")
+		fmt.Fprintf(os.Stderr, "  # Execute SQL from file\n")
+		fmt.Fprintf(os.Stderr, "  vsql -f queries.sql\n")
 		os.Exit(0)
 	}
 
@@ -51,6 +56,17 @@ func main() {
 	// If command is provided, execute it and exit
 	if command != "" {
 		executeCommand(command, store, metaStore)
+		return
+	}
+
+	// If file path is provided, read and execute it
+	if filePath != "" {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filePath, err)
+			os.Exit(1)
+		}
+		executeCommand(string(content), store, metaStore)
 		return
 	}
 
