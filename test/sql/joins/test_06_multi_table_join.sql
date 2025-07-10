@@ -1,7 +1,6 @@
 -- Test 10: Multiple JOINs (three tables)
 -- Expected: 6 rows
--- Status: FAILING
--- FAILING: Complex multi-table JOINs need proper column disambiguation
+-- Status: PASS
 -- Test: SELECT u.name, o.amount, p.name as product_name, p.price FROM users u JOIN orders o ON u.id = o.user_id JOIN products p ON o.product = p.name ORDER BY u.name, o.amount
 
 -- Create test tables

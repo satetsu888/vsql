@@ -188,19 +188,24 @@ func processFromNode(ctx *QueryContext, node *pg_query.Node) ([]storage.Row, err
 		return rows, nil
 	case *pg_query.Node_JoinExpr:
 		// Handle JOIN
+		// fmt.Printf("DEBUG processFromNode: Processing JoinExpr\n")
 		// Get left table info
 		leftAlias := extractTableAlias(n.JoinExpr.Larg)
+		// fmt.Printf("DEBUG processFromNode: Left alias extracted: '%s'\n", leftAlias)
 		leftRows, err := processFromNode(ctx, n.JoinExpr.Larg)
 		if err != nil {
 			return nil, err
 		}
+		// fmt.Printf("DEBUG processFromNode: Left rows count: %d\n", len(leftRows))
 		
 		// Get right table info
 		rightAlias := extractTableAlias(n.JoinExpr.Rarg)
+		// fmt.Printf("DEBUG processFromNode: Right alias extracted: '%s'\n", rightAlias)
 		rightRows, err := processFromNode(ctx, n.JoinExpr.Rarg)
 		if err != nil {
 			return nil, err
 		}
+		// fmt.Printf("DEBUG processFromNode: Right rows count: %d\n", len(rightRows))
 		
 		return performJoinWithContext(leftRows, rightRows, n.JoinExpr, leftAlias, rightAlias, ctx), nil
 	case *pg_query.Node_RangeSubselect:
@@ -217,14 +222,19 @@ func extractTableAlias(node *pg_query.Node) string {
 	switch n := node.Node.(type) {
 	case *pg_query.Node_RangeVar:
 		if n.RangeVar.Alias != nil && n.RangeVar.Alias.Aliasname != "" {
+			// fmt.Printf("DEBUG extractTableAlias: RangeVar with alias '%s' (table name '%s')\n", 
+			//	n.RangeVar.Alias.Aliasname, n.RangeVar.Relname)
 			return n.RangeVar.Alias.Aliasname
 		}
+		// fmt.Printf("DEBUG extractTableAlias: RangeVar without alias, using table name '%s'\n", n.RangeVar.Relname)
 		return n.RangeVar.Relname
 	case *pg_query.Node_JoinExpr:
 		// For nested joins, this gets more complex
 		// For now, just return empty
+		// fmt.Printf("DEBUG extractTableAlias: JoinExpr node (nested join) - returning empty\n")
 		return ""
 	}
+	// fmt.Printf("DEBUG extractTableAlias: Unknown node type - returning empty\n")
 	return ""
 }
 
@@ -252,6 +262,15 @@ func performJoin(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr,
 func performJoinWithAliases(leftRows, rightRows []storage.Row, joinExpr *pg_query.JoinExpr, leftAlias, rightAlias string, ctx *QueryContext) []storage.Row {
 	var result []storage.Row
 
+	// DEBUG: Print join info
+	// // fmt.Printf("DEBUG performJoinWithAliases: leftAlias='%s', rightAlias='%s', leftRows=%d, rightRows=%d\n", 
+	// 	leftAlias, rightAlias, len(leftRows), len(rightRows))
+	// if joinExpr.Quals != nil {
+	// 	// fmt.Printf("DEBUG performJoinWithAliases: Has join condition\n")
+	// } else {
+	// 	// fmt.Printf("DEBUG performJoinWithAliases: No join condition (CROSS JOIN)\n")
+	// }
+
 	switch joinExpr.Jointype {
 	case pg_query.JoinType_JOIN_INNER:
 		// INNER JOIN
@@ -259,6 +278,8 @@ func performJoinWithAliases(leftRows, rightRows []storage.Row, joinExpr *pg_quer
 			for _, rightRow := range rightRows {
 				if joinExpr.Quals == nil || evaluateJoinCondition(leftRow, rightRow, joinExpr.Quals, ctx) {
 					mergedRow := mergeRowsWithAliases(leftRow, rightRow, leftAlias, rightAlias)
+					// DEBUG: Print merged row
+					// // fmt.Printf("DEBUG performJoinWithAliases: Merged row: %v\n", mergedRow)
 					result = append(result, mergedRow)
 				}
 			}
@@ -388,7 +409,11 @@ func evaluateQualifiedAExpr(leftRow, rightRow storage.Row, expr *pg_query.A_Expr
 		}
 	}
 	
-	return compareValuesPg(leftVal, opName, rightVal)
+	// DEBUG: Print comparison
+	result := compareValuesPg(leftVal, opName, rightVal)
+	// fmt.Printf("DEBUG evaluateQualifiedAExpr: %v %s %v = %v\n", leftVal, opName, rightVal, result)
+	
+	return result
 }
 
 func evaluateQualifiedBoolExpr(leftRow, rightRow storage.Row, expr *pg_query.BoolExpr, ctx *QueryContext) bool {
@@ -421,8 +446,11 @@ func extractQualifiedValue(leftRow, rightRow storage.Row, node *pg_query.Node, c
 		return nil
 	}
 	
+	// fmt.Printf("DEBUG extractQualifiedValue: node type = %T\n", node.Node)
+	
 	switch n := node.Node.(type) {
 	case *pg_query.Node_ColumnRef:
+		// fmt.Printf("DEBUG extractQualifiedValue: ColumnRef with %d fields\n", len(n.ColumnRef.Fields))
 		// Handle qualified column references (table.column)
 		if len(n.ColumnRef.Fields) >= 2 {
 			// table.column format
@@ -436,23 +464,51 @@ func extractQualifiedValue(leftRow, rightRow storage.Row, node *pg_query.Node, c
 				columnName = str.String_.Sval
 			}
 			
+			// DEBUG: Print qualified column lookup
+			// fmt.Printf("DEBUG extractQualifiedValue: Looking for %s.%s\n", tableName, columnName)
+			// fmt.Printf("DEBUG extractQualifiedValue: leftRow=%v\n", leftRow)
+			// fmt.Printf("DEBUG extractQualifiedValue: rightRow=%v\n", rightRow)
+			
 			// Check which row to use based on table name/alias
 			if ctx.currentJoinContext != nil {
+				// fmt.Printf("DEBUG extractQualifiedValue: currentJoinContext leftAlias='%s', rightAlias='%s'\n",
+				//	ctx.currentJoinContext.leftAlias, ctx.currentJoinContext.rightAlias)
+				// fmt.Printf("DEBUG extractQualifiedValue: Comparing tableName='%s' with leftAlias='%s' and rightAlias='%s'\n",
+				//	tableName, ctx.currentJoinContext.leftAlias, ctx.currentJoinContext.rightAlias)
 				if tableName == ctx.currentJoinContext.leftAlias {
 					if val, exists := leftRow[columnName]; exists {
+						// fmt.Printf("DEBUG extractQualifiedValue: Found in leftRow: %v\n", val)
 						return val
 					}
+					// fmt.Printf("DEBUG extractQualifiedValue: Not found in leftRow\n")
 				} else if tableName == ctx.currentJoinContext.rightAlias {
 					if val, exists := rightRow[columnName]; exists {
+						// fmt.Printf("DEBUG extractQualifiedValue: Found in rightRow: %v\n", val)
+						return val
+					}
+					// fmt.Printf("DEBUG extractQualifiedValue: Not found in rightRow\n")
+				} else {
+					// The table might be from a previous join, check if it exists in the qualified columns
+					// fmt.Printf("DEBUG extractQualifiedValue: Table '%s' not in current join context, checking qualified columns\n", tableName)
+					qualifiedName := tableName + "." + columnName
+					if val, exists := leftRow[qualifiedName]; exists {
+						// fmt.Printf("DEBUG extractQualifiedValue: Found as qualified column '%s' in leftRow: %v\n", qualifiedName, val)
+						return val
+					}
+					// Also check for the unqualified column in case it's from the nested join
+					if val, exists := leftRow[columnName]; exists {
+						// fmt.Printf("DEBUG extractQualifiedValue: Found unqualified column '%s' in leftRow: %v\n", columnName, val)
 						return val
 					}
 				}
 			} else {
 				// Fallback to checking both rows
 				if val, exists := leftRow[columnName]; exists {
+					// fmt.Printf("DEBUG extractQualifiedValue: Found in leftRow (fallback): %v\n", val)
 					return val
 				}
 				if val, exists := rightRow[columnName]; exists {
+					// fmt.Printf("DEBUG extractQualifiedValue: Found in rightRow (fallback): %v\n", val)
 					return val
 				}
 			}
@@ -460,13 +516,17 @@ func extractQualifiedValue(leftRow, rightRow storage.Row, node *pg_query.Node, c
 			// Unqualified column - check both rows
 			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
 				columnName := str.String_.Sval
+				// fmt.Printf("DEBUG extractQualifiedValue: Looking for unqualified column %s\n", columnName)
 				// First check left row, then right row
 				if val, exists := leftRow[columnName]; exists {
+					// fmt.Printf("DEBUG extractQualifiedValue: Found in leftRow: %v\n", val)
 					return val
 				}
 				if val, exists := rightRow[columnName]; exists {
+					// fmt.Printf("DEBUG extractQualifiedValue: Found in rightRow: %v\n", val)
 					return val
 				}
+				// fmt.Printf("DEBUG extractQualifiedValue: Not found in either row\n")
 			}
 		}
 	case *pg_query.Node_AConst:
@@ -489,6 +549,11 @@ func mergeRows(left, right storage.Row) storage.Row {
 func mergeRowsWithAliases(left, right storage.Row, leftAlias, rightAlias string) storage.Row {
 	merged := make(storage.Row)
 	
+	// DEBUG: Print merge input
+	// fmt.Printf("DEBUG mergeRowsWithAliases: leftAlias='%s', rightAlias='%s'\n", leftAlias, rightAlias)
+	// fmt.Printf("DEBUG mergeRowsWithAliases: leftRow=%v\n", left)
+	// fmt.Printf("DEBUG mergeRowsWithAliases: rightRow=%v\n", right)
+	
 	// Check for column conflicts
 	conflicts := make(map[string]bool)
 	for k := range left {
@@ -499,22 +564,40 @@ func mergeRowsWithAliases(left, right storage.Row, leftAlias, rightAlias string)
 	
 	// Add left row columns
 	for k, v := range left {
+		// Always add the original key
+		merged[k] = v
+		
+		// If there's a conflict and we have an alias, also add the qualified version
 		if conflicts[k] && leftAlias != "" {
-			// Prefix with alias for conflicting columns
 			merged[leftAlias+"."+k] = v
 		}
-		merged[k] = v
+		
+		// Preserve any existing qualified column names (e.g., from nested joins)
+		if strings.Contains(k, ".") {
+			merged[k] = v
+		}
 	}
 	
 	// Add right row columns
 	for k, v := range right {
+		// Only add if not already present (left takes precedence for unqualified names)
+		if _, exists := merged[k]; !exists || strings.Contains(k, ".") {
+			merged[k] = v
+		}
+		
+		// If there's a conflict and we have an alias, also add the qualified version
 		if conflicts[k] && rightAlias != "" {
-			// Prefix with alias for conflicting columns
 			merged[rightAlias+"."+k] = v
-		} else {
+		}
+		
+		// Preserve any existing qualified column names
+		if strings.Contains(k, ".") {
 			merged[k] = v
 		}
 	}
+	
+	// DEBUG: Print merged result
+	// fmt.Printf("DEBUG mergeRowsWithAliases: merged=%v\n", merged)
 	
 	return merged
 }
@@ -733,7 +816,7 @@ func processSelectList(ctx *QueryContext, targetList []*pg_query.Node, allRows [
 	if groupedRows != nil {
 		// Process grouped results
 		// DEBUG: Check group count
-		// fmt.Printf("DEBUG: Processing %d groups\n", len(groupedRows))
+		// // fmt.Printf("DEBUG: Processing %d groups\n", len(groupedRows))
 		for _, groupRows := range groupedRows {
 			// Handle empty groups (e.g., COUNT on empty table)
 			var sampleRow storage.Row
@@ -743,7 +826,7 @@ func processSelectList(ctx *QueryContext, targetList []*pg_query.Node, allRows [
 				sampleRow = make(storage.Row)
 			}
 			// DEBUG: Check group processing
-			// fmt.Printf("DEBUG: Processing group '%s' with %d rows\n", groupKey, len(groupRows))
+			// // fmt.Printf("DEBUG: Processing group '%s' with %d rows\n", groupKey, len(groupRows))
 			resultRow := processSelectTargetsWithColumns(ctx, targetList, sampleRow, groupRows, true, columns)
 			resultRows = append(resultRows, resultRow)
 		}
@@ -920,22 +1003,45 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 		case *pg_query.Node_ColumnRef:
 			// Handle column reference with potential table alias
 			var columnName string
+			var tableName string
 			fields := val.ColumnRef.Fields
 			
 			if len(fields) == 2 {
-				// table.column format - use the column name (second field)
+				// table.column format
+				if str, ok := fields[0].Node.(*pg_query.Node_String_); ok {
+					tableName = str.String_.Sval
+				}
 				if str, ok := fields[1].Node.(*pg_query.Node_String_); ok {
 					columnName = str.String_.Sval
+				}
+				
+				// First try to find the qualified column name in the row
+				qualifiedName := tableName + "." + columnName
+				if val, exists := currentRow[qualifiedName]; exists {
+					if colName == "" {
+						colName = columnName
+					}
+					return val, colName
+				}
+				
+				// If not found, fall back to unqualified name
+				if val, exists := currentRow[columnName]; exists {
+					if colName == "" {
+						colName = columnName
+					}
+					return val, colName
 				}
 			} else if len(fields) == 1 {
 				// Just column name
 				if str, ok := fields[0].Node.(*pg_query.Node_String_); ok {
 					columnName = str.String_.Sval
 				}
-			}
-			
-			if columnName != "" {
-				return currentRow[columnName], columnName
+				if columnName != "" {
+					if colName == "" {
+						colName = columnName
+					}
+					return currentRow[columnName], colName
+				}
 			}
 		case *pg_query.Node_AConst:
 			// Handle constant
