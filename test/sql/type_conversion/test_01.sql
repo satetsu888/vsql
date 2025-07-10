@@ -1,7 +1,6 @@
--- Test 1: Numeric comparison bug - should return 3 rows but may return wrong results
--- Expected: id=10,100,20 (values > 5)
--- Bug result: id=1,10,100,20,2 (string comparison "1">"5", "2"<"5")
--- Status: FAILING
+-- Test 1: Numeric comparison - should return 3 rows where id > 5
+-- Expected: 3 rows with id=10,20,100 (values > 5)
+-- Test: Verifies numeric comparison works correctly, not string comparison
 
 -- Setup
 CREATE TABLE numeric_test (

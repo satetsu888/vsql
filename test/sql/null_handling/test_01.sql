@@ -1,7 +1,6 @@
 -- Test 1: NULL = NULL should return no rows (in SQL, NULL = NULL is UNKNOWN, not TRUE)
 -- Expected: 3 rows
--- Bug result: may return rows where both values are NULL
--- Status: FAILING
+-- Test: Verifies that NULL = NULL evaluates to UNKNOWN, not TRUE
 
 -- Setup
 CREATE TABLE null_test (
