@@ -150,7 +150,7 @@ go vet ./...
 - Aggregate functions: COUNT, SUM, AVG, MAX, MIN
 - COUNT(DISTINCT column) - counts unique non-NULL values
 - GROUP BY / HAVING
-- Subqueries: IN with subqueries, scalar subqueries in WHERE clause
+- Subqueries: IN with subqueries, scalar subqueries in WHERE clause, scalar subqueries in SELECT clause
 - DISTINCT queries
 - Column ordering consistency (from CREATE TABLE + dynamic columns)
 - BETWEEN / NOT BETWEEN operators
@@ -174,7 +174,6 @@ go vet ./...
 - COALESCE function
 - Window functions
 - CTEs (WITH clause)
-- Scalar subqueries in SELECT clause
 - Correlated subqueries (for EXISTS and other contexts)
 - Transactions
 - Indexes
