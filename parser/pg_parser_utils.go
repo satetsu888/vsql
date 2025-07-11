@@ -44,6 +44,8 @@ func extractAConstValue(aConst *pg_query.A_Const) interface{} {
 		return int(val.Ival.Ival)
 	case *pg_query.A_Const_Fval:
 		return val.Fval.Fval
+	case *pg_query.A_Const_Boolval:
+		return val.Boolval.Boolval
 	}
 	return nil
 }
@@ -57,7 +59,23 @@ func compareValuesPg(left interface{}, operator string, right interface{}) bool 
 		return false
 	}
 
-	// Try to compare as numbers first
+	// Try to compare as booleans first
+	leftBool, leftIsBool := left.(bool)
+	rightBool, rightIsBool := right.(bool)
+	
+	if leftIsBool && rightIsBool {
+		switch operator {
+		case "=":
+			return leftBool == rightBool
+		case "!=", "<>":
+			return leftBool != rightBool
+		default:
+			// Boolean values don't support <, >, <=, >= operators
+			return false
+		}
+	}
+	
+	// Try to compare as numbers
 	leftNum, leftIsNum := toNumber(left)
 	rightNum, rightIsNum := toNumber(right)
 	
