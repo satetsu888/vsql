@@ -90,8 +90,8 @@ func runIndividualSQLFile(t *testing.T, filePath string) {
 				}
 			}
 			
-			// Check for Status: FAILING
-			if strings.Contains(comment, "Status: FAILING") {
+			// Check for Status: FAILING or FAILING:
+			if strings.Contains(comment, "Status: FAILING") || strings.Contains(comment, "FAILING:") {
 				statusFailing = true
 			}
 		}

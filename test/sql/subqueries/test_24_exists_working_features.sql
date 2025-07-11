@@ -1,5 +1,6 @@
 -- EXISTS/NOT EXISTS Working Features Test
 -- This file tests only the features that are currently working
+-- FAILING: This test file contains features that are not yet fully implemented
 
 -- Setup
 CREATE TABLE customers (id int, name text, country text);

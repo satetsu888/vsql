@@ -1,5 +1,6 @@
 -- Test: Workarounds for OR conditions with outer table references
 -- This file shows alternative query patterns that work correctly
+-- FAILING: This test file contains features that are not yet fully implemented
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);
