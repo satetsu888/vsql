@@ -1,7 +1,6 @@
 -- Test 10: COUNT with numeric condition
--- Expected: 1 rows
--- Bug result: incorrect count
--- Status: FAILING
+-- Expected: 1 row with count=3
+-- Test: Verifies COUNT with numeric WHERE condition works correctly
 
 -- Setup
 CREATE TABLE numeric_test (

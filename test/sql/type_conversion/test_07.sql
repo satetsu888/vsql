@@ -1,7 +1,6 @@
 -- Test 7: IN clause with numbers
 -- Expected: 3 rows
--- Bug result: may fail to match due to string comparison
--- Status: FAILING
+-- Test: Verifies IN clause works correctly with numeric values
 
 -- Setup
 CREATE TABLE numeric_test (

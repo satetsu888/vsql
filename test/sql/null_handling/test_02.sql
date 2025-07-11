@@ -1,7 +1,6 @@
 -- Test 2: NULL != NULL should also return no rows
 -- Expected: 0 rows  
--- Bug result: may return rows
--- Status: FAILING
+-- Test: Verifies that NULL != NULL returns no rows (correct SQL three-valued logic)
 
 -- Setup
 CREATE TABLE null_test (

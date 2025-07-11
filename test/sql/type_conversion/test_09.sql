@@ -1,7 +1,6 @@
 -- Test 9: MAX/MIN aggregates on numeric columns
 -- Expected: MAX(id)=100, MIN(id)=1
--- Bug result: MAX may be "99" or "9" due to string comparison
--- Status: FAILING
+-- Test: Verifies MAX/MIN aggregates work correctly with numeric columns
 
 -- Setup
 CREATE TABLE numeric_test (
