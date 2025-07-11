@@ -13,10 +13,12 @@ type QueryContext struct {
 	dataStore    *storage.DataStore
 	metaStore    *storage.MetaStore
 	tables       map[string]*TableContext
+	outerTables  map[string]*TableContext  // Tables from outer queries
 	subqueries   map[string][]storage.Row
 	aggregations map[string]interface{}
 	currentJoinContext *JoinContext  // Track current join context
 	currentRow   storage.Row          // Current row for correlated subqueries
+	outerRows    []storage.Row        // Stack of rows from outer queries
 }
 
 type TableContext struct {
@@ -50,8 +52,10 @@ func executePgSelectAdvanced(stmt *pg_query.SelectStmt, dataStore *storage.DataS
 		dataStore:    dataStore,
 		metaStore:    metaStore,
 		tables:       make(map[string]*TableContext),
+		outerTables:  make(map[string]*TableContext),
 		subqueries:   make(map[string][]storage.Row),
 		aggregations: make(map[string]interface{}),
+		outerRows:    []storage.Row{},
 	}
 
 	return executePgSelectWithContext(stmt, ctx)
@@ -101,7 +105,17 @@ func executePgSelectWithContext(stmt *pg_query.SelectStmt, ctx *QueryContext) ([
 
 	// Apply HAVING clause
 	if stmt.HavingClause != nil && groupedRows != nil {
-		resultRows = filterResultRows(resultRows, columns, stmt.HavingClause)
+		// Use ordered groups if available
+		var orderedGroups [][]storage.Row
+		if groupOrder, ok := ctx.aggregations["__groupOrder__"].([][]storage.Row); ok {
+			orderedGroups = groupOrder
+		} else {
+			// Fallback to unordered
+			for _, group := range groupedRows {
+				orderedGroups = append(orderedGroups, group)
+			}
+		}
+		resultRows = filterResultRowsWithGroups(resultRows, columns, stmt.HavingClause, orderedGroups)
 	}
 
 	// Apply ORDER BY
@@ -604,14 +618,28 @@ func mergeRowsWithAliases(left, right storage.Row, leftAlias, rightAlias string)
 
 func executeSubquery(subquery *pg_query.Node, ctx *QueryContext) ([]storage.Row, error) {
 	if selectStmt, ok := subquery.Node.(*pg_query.Node_SelectStmt); ok {
-		// Create a new context for the subquery that inherits currentRow
+		// Create a new context for the subquery that inherits currentRow and tables from outer context
 		subCtx := &QueryContext{
 			dataStore:    ctx.dataStore,
 			metaStore:    ctx.metaStore,
 			tables:       make(map[string]*TableContext),
+			outerTables:  make(map[string]*TableContext),
 			subqueries:   make(map[string][]storage.Row),
 			aggregations: make(map[string]interface{}),
 			currentRow:   ctx.currentRow, // Pass the outer query's row
+			outerRows:    make([]storage.Row, len(ctx.outerRows)),
+		}
+		
+		// Copy outer rows stack
+		copy(subCtx.outerRows, ctx.outerRows)
+		
+		// Merge outer tables: current query's tables become outer tables for subquery
+		for k, v := range ctx.tables {
+			subCtx.outerTables[k] = v
+		}
+		// Also preserve any outer tables from parent contexts
+		for k, v := range ctx.outerTables {
+			subCtx.outerTables[k] = v
 		}
 		
 		// Execute the subquery with context
@@ -642,7 +670,24 @@ func executeSubquery(subquery *pg_query.Node, ctx *QueryContext) ([]storage.Row,
 func filterRows(rows []storage.Row, whereClause *pg_query.Node, ctx *QueryContext) []storage.Row {
 	var filtered []storage.Row
 	for _, row := range rows {
-		if evaluateWhereWithSubqueries(row, whereClause, ctx) {
+		// Create an enriched row that includes qualified column names for outer query references
+		enrichedRow := make(storage.Row)
+		for k, v := range row {
+			enrichedRow[k] = v
+		}
+		
+		// Add qualified names for all tables in context
+		// Since we can't easily determine which table a row belongs to,
+		// add qualified names for all table aliases in the context
+		for tableName := range ctx.tables {
+			// Add qualified names for all columns
+			for colName, colVal := range row {
+				qualifiedName := tableName + "." + colName
+				enrichedRow[qualifiedName] = colVal
+			}
+		}
+		
+		if evaluateWhereWithSubqueries(enrichedRow, whereClause, ctx) {
 			filtered = append(filtered, row)
 		}
 	}
@@ -654,11 +699,18 @@ func evaluateWhereWithSubqueries(row storage.Row, expr *pg_query.Node, ctx *Quer
 	case *pg_query.Node_SubLink:
 		// Store current row for correlated subqueries
 		oldRow := ctx.currentRow
+		oldOuterRows := ctx.outerRows
+		
+		// Push current row onto outer rows stack
+		ctx.outerRows = append([]storage.Row{row}, ctx.outerRows...)
 		ctx.currentRow = row
+		
 		// Handle subquery in WHERE clause
 		result := evaluateSubqueryExpression(row, e.SubLink, ctx)
-		// Restore previous row
+		
+		// Restore previous state
 		ctx.currentRow = oldRow
+		ctx.outerRows = oldOuterRows
 		return result
 	case *pg_query.Node_AExpr:
 		return evaluateAExprWithContext(row, e.AExpr, ctx)
@@ -815,8 +867,9 @@ func processSelectList(ctx *QueryContext, targetList []*pg_query.Node, allRows [
 
 	if groupedRows != nil {
 		// Process grouped results
-		// DEBUG: Check group count
-		// // fmt.Printf("DEBUG: Processing %d groups\n", len(groupedRows))
+		// Keep track of group order for HAVING clause evaluation
+		ctx.aggregations["__groupOrder__"] = [][]storage.Row{}
+		
 		for _, groupRows := range groupedRows {
 			// Handle empty groups (e.g., COUNT on empty table)
 			var sampleRow storage.Row
@@ -825,10 +878,14 @@ func processSelectList(ctx *QueryContext, targetList []*pg_query.Node, allRows [
 			} else {
 				sampleRow = make(storage.Row)
 			}
-			// DEBUG: Check group processing
-			// // fmt.Printf("DEBUG: Processing group '%s' with %d rows\n", groupKey, len(groupRows))
+			
 			resultRow := processSelectTargetsWithColumns(ctx, targetList, sampleRow, groupRows, true, columns)
 			resultRows = append(resultRows, resultRow)
+			
+			// Store group rows in order
+			if groupOrder, ok := ctx.aggregations["__groupOrder__"].([][]storage.Row); ok {
+				ctx.aggregations["__groupOrder__"] = append(groupOrder, groupRows)
+			}
 		}
 	} else {
 		// Process non-grouped results
@@ -1262,9 +1319,26 @@ func extractColumnName(node *pg_query.Node) string {
 	return "?column?"
 }
 
-func filterResultRows(rows [][]interface{}, columns []string, havingClause *pg_query.Node) [][]interface{} {
+func filterResultRowsWithGroups(rows [][]interface{}, columns []string, havingClause *pg_query.Node, orderedGroups [][]storage.Row) [][]interface{} {
 	var filtered [][]interface{}
-	for _, row := range rows {
+	
+	// If we don't have matching groups, fall back to simple evaluation
+	if len(orderedGroups) == 0 {
+		for _, row := range rows {
+			rowMap := make(storage.Row)
+			for i, col := range columns {
+				if i < len(row) {
+					rowMap[col] = row[i]
+				}
+			}
+			if evaluatePgWhere(rowMap, havingClause) {
+				filtered = append(filtered, row)
+			}
+		}
+		return filtered
+	}
+	
+	for idx, row := range rows {
 		// Convert row to map for evaluation
 		rowMap := make(storage.Row)
 		for i, col := range columns {
@@ -1272,6 +1346,13 @@ func filterResultRows(rows [][]interface{}, columns []string, havingClause *pg_q
 				rowMap[col] = row[i]
 			}
 		}
+		
+		// Get the corresponding group rows for this result row
+		var groupRows []storage.Row
+		if idx < len(orderedGroups) {
+			groupRows = orderedGroups[idx]
+		}
+		
 		// Also add entries for common aggregate function names
 		// This helps when HAVING uses SUM(x) but the column is aliased
 		for i, col := range columns {
@@ -1293,11 +1374,138 @@ func filterResultRows(rows [][]interface{}, columns []string, havingClause *pg_q
 				}
 			}
 		}
-		if evaluatePgWhere(rowMap, havingClause) {
+		
+		// Evaluate HAVING clause - may need to compute aggregates on demand
+		if evaluateHavingClause(rowMap, havingClause, groupRows) {
 			filtered = append(filtered, row)
 		}
 	}
 	return filtered
+}
+
+func evaluateHavingClause(rowMap storage.Row, havingClause *pg_query.Node, groupRows []storage.Row) bool {
+	// First try regular evaluation
+	regularResult := evaluatePgWhere(rowMap, havingClause)
+	
+	if regularResult {
+		return true
+	}
+	
+	// If groupRows is empty, we can't compute aggregates
+	if len(groupRows) == 0 {
+		return false
+	}
+	
+	// If that fails, check if we need to compute aggregates on demand
+	switch expr := havingClause.Node.(type) {
+	case *pg_query.Node_AExpr:
+		// Check if expression contains aggregate functions
+		if needsAggregateComputation(expr.AExpr) {
+			return evaluateHavingWithAggregates(rowMap, expr.AExpr, groupRows)
+		}
+	case *pg_query.Node_BoolExpr:
+		// Handle AND/OR expressions
+		return evaluateHavingBoolExpr(rowMap, expr.BoolExpr, groupRows)
+	}
+	
+	return false
+}
+
+func needsAggregateComputation(expr *pg_query.A_Expr) bool {
+	// Check if left or right side contains function calls
+	if expr.Lexpr != nil {
+		if funcCall, ok := expr.Lexpr.Node.(*pg_query.Node_FuncCall); ok {
+			funcName := getFunctionName(funcCall.FuncCall)
+			if isAggregateFunction(funcName) {
+				return true
+			}
+		}
+	}
+	if expr.Rexpr != nil {
+		if funcCall, ok := expr.Rexpr.Node.(*pg_query.Node_FuncCall); ok {
+			funcName := getFunctionName(funcCall.FuncCall)
+			if isAggregateFunction(funcName) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func evaluateHavingWithAggregates(rowMap storage.Row, expr *pg_query.A_Expr, groupRows []storage.Row) bool {
+	// Extract values, computing aggregates on demand if needed
+	leftVal := extractHavingValue(rowMap, expr.Lexpr, groupRows)
+	rightVal := extractHavingValue(rowMap, expr.Rexpr, groupRows)
+	
+	// Get operator
+	op := ""
+	if len(expr.Name) > 0 {
+		if str, ok := expr.Name[0].Node.(*pg_query.Node_String_); ok {
+			op = str.String_.Sval
+		}
+	}
+	
+	return compareValuesPg(fmt.Sprintf("%v", leftVal), op, rightVal)
+}
+
+func extractHavingValue(rowMap storage.Row, node *pg_query.Node, groupRows []storage.Row) interface{} {
+	if node == nil {
+		return nil
+	}
+	
+	switch n := node.Node.(type) {
+	case *pg_query.Node_FuncCall:
+		funcName := getFunctionName(n.FuncCall)
+		if isAggregateFunction(funcName) {
+			// Compute aggregate on demand
+			result := evaluateAggregateFunction(n.FuncCall, groupRows)
+			return result
+		}
+		// Try to find in rowMap (aggregate columns are stored with lowercase names)
+		lowerFuncName := strings.ToLower(funcName)
+		if val, exists := rowMap[lowerFuncName]; exists {
+			return val
+		}
+		// Also try the original case
+		if val, exists := rowMap[funcName]; exists {
+			return val
+		}
+	case *pg_query.Node_AConst:
+		return extractAConstValue(n.AConst)
+	case *pg_query.Node_ColumnRef:
+		// Extract column value from rowMap
+		if len(n.ColumnRef.Fields) > 0 {
+			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+				return rowMap[str.String_.Sval]
+			}
+		}
+	}
+	return nil
+}
+
+func evaluateHavingBoolExpr(rowMap storage.Row, expr *pg_query.BoolExpr, groupRows []storage.Row) bool {
+	switch expr.Boolop {
+	case pg_query.BoolExprType_AND_EXPR:
+		for _, arg := range expr.Args {
+			if !evaluateHavingClause(rowMap, arg, groupRows) {
+				return false
+			}
+		}
+		return true
+	case pg_query.BoolExprType_OR_EXPR:
+		for _, arg := range expr.Args {
+			if evaluateHavingClause(rowMap, arg, groupRows) {
+				return true
+			}
+		}
+		return false
+	case pg_query.BoolExprType_NOT_EXPR:
+		if len(expr.Args) > 0 {
+			return !evaluateHavingClause(rowMap, expr.Args[0], groupRows)
+		}
+		return true
+	}
+	return true
 }
 
 func sortRows(rows [][]interface{}, columns []string, sortClause []*pg_query.Node) [][]interface{} {
@@ -1568,14 +1776,36 @@ func extractValueFromNodeWithContext(row storage.Row, node *pg_query.Node, ctx *
 				return val
 			}
 			
-			// Then check if this refers to a table in the context
-			if _, exists := ctx.tables[tableName]; exists {
-				// This is a table from the subquery, use the current row
-				if val, exists := row[columnName]; exists {
+			// If not found in current row, check if this is an outer table
+			if _, isOuterTable := ctx.outerTables[tableName]; isOuterTable && ctx.currentRow != nil {
+				// This table is from an outer query, use currentRow
+				if val, exists := ctx.currentRow[columnName]; exists {
 					return val
 				}
-			} else if ctx.currentRow != nil {
-				// Not a subquery table, might be from outer query
+				if val, exists := ctx.currentRow[qualifiedName]; exists {
+					return val
+				}
+			}
+			
+			// If not found in current row, check outer rows stack
+			// Start from the most recent outer row (index 0)
+			for _, outerRow := range ctx.outerRows {
+				// Try qualified name first
+				if val, exists := outerRow[qualifiedName]; exists {
+					return val
+				}
+				// Then try unqualified name
+				if val, exists := outerRow[columnName]; exists {
+					// TODO: Should verify this belongs to the correct table
+					return val
+				}
+			}
+			
+			// Finally check currentRow if available
+			if ctx.currentRow != nil {
+				if val, exists := ctx.currentRow[qualifiedName]; exists {
+					return val
+				}
 				if val, exists := ctx.currentRow[columnName]; exists {
 					return val
 				}

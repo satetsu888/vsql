@@ -619,6 +619,21 @@ func extractValueFromExpr(row storage.Row, node *pg_query.Node) interface{} {
 			if val, exists := row[funcName]; exists {
 				return val
 			}
+			
+			// Special handling for COUNT(*) - it's stored as "count" in result rows
+			if funcName == "COUNT" && len(n.FuncCall.Args) > 0 {
+				// Check if it's COUNT(*)
+				if colRef, ok := n.FuncCall.Args[0].Node.(*pg_query.Node_ColumnRef); ok {
+					if len(colRef.ColumnRef.Fields) > 0 {
+						if _, isStar := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_AStar); isStar {
+							// This is COUNT(*), look for "count" column
+							if val, exists := row["count"]; exists {
+								return val
+							}
+						}
+					}
+				}
+			}
 		}
 	case *pg_query.Node_AExpr:
 		// Handle arithmetic expressions

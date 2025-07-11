@@ -172,12 +172,14 @@ go vet ./...
 - Numeric comparisons with proper type handling (not string comparison)
 
 ### Partially Implemented
-- EXISTS/NOT EXISTS subqueries: Basic and correlated subqueries work, but not with:
-  - Nested EXISTS (EXISTS within EXISTS)
-  - GROUP BY/HAVING in the subquery
-  - Complex OR conditions referencing outer table
+- EXISTS/NOT EXISTS subqueries: Basic and correlated subqueries work, including:
+  - ✓ Nested EXISTS (EXISTS within EXISTS)
+  - ✓ GROUP BY/HAVING in the subquery (including aggregate functions not in SELECT)
+  - ✓ Complex OR conditions referencing outer table (works with proper data types, see note on boolean handling)
 - UNION/UNION ALL: Basic structure exists
 - OFFSET: Basic implementation (some edge cases may not work)
+- Boolean type: Boolean literals (true/false) are not properly stored or compared
+  - Workaround: Use integer (0/1) or text ('true'/'false') instead
 
 ### Not Yet Implemented
 - ILIKE operator (case-insensitive LIKE)
