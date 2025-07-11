@@ -1172,12 +1172,18 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 
 	case "SUM":
 		var sum float64
+		hasNonNullValue := false
 		for _, row := range rows {
 			if val := row[colName]; val != nil {
 				if num, err := toFloat64(val); err == nil {
 					sum += num
+					hasNonNullValue = true
 				}
 			}
+		}
+		// SQL standard: SUM returns NULL if no non-NULL values
+		if !hasNonNullValue {
+			return nil
 		}
 		return sum
 

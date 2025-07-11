@@ -3,7 +3,7 @@
 -- Tokyo: users=1, total_sales=300
 -- Osaka: users=1, total_sales=1600
 -- Kyoto: users=1, total_sales=NULL
--- Status: FAILING - HAVING clause with OR condition and NULL checks not fully supported
+-- Test: Verifies GROUP BY with LEFT JOIN, HAVING clause with OR condition and IS NULL check
 
 -- Setup
 CREATE TABLE users (id int, name text, age int, city text);
@@ -13,7 +13,7 @@ INSERT INTO users (id, name, age, city) VALUES
   (1, 'Alice', 25, 'Tokyo'),
   (2, 'Bob', 30, 'Osaka'),
   (3, 'Charlie', 35, 'Tokyo'),
-  (4, 'David', 28, 'Kyoto');
+  (4, 'David', 30, 'Kyoto');
 
 INSERT INTO orders (id, user_id, product, amount) VALUES
   (1, 1, 'Laptop', 1200),

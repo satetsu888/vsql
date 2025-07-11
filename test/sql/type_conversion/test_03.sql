@@ -1,7 +1,6 @@
 -- Test 3: Price comparison with decimals
 -- Expected: 2 rows (price > 10.00)
--- Bug result: incorrect due to string comparison
--- Status: FAILING
+-- Test: Verifies decimal comparisons work correctly
 
 -- Setup
 CREATE TABLE numeric_test (

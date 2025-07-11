@@ -1,7 +1,6 @@
 -- Test 3: Comparison with NULL should return no rows
 -- Expected: 0 rows
--- Bug result: may return rows where value is not NULL
--- Status: FAILING
+-- Test: Verifies that = NULL returns no rows (correct SQL three-valued logic)
 
 -- Setup
 CREATE TABLE null_test (

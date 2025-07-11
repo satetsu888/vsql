@@ -1,6 +1,6 @@
 -- Test 2: COUNT DISTINCT function
--- Expected: 1 row (users=2, total_sales=1600)
--- Status: FAILING - HAVING clause with OR condition and NULL checks not fully supported
+-- Expected: Query 1 returns 1 row with unique_cities=3, Query 2 returns 1 row with unique_users_with_orders=3
+-- Test: Verifies COUNT DISTINCT works correctly with single table and JOINs
 
 -- Setup
 CREATE TABLE users (id int, name text, age int, city text);
