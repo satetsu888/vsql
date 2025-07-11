@@ -195,3 +195,106 @@ go vet ./...
 - Foreign keys
 - Views
 - Stored procedures/functions
+
+## Writing SQL Test Files
+
+### Overview
+SQL test files are located in `test/sql/` directory, organized by feature categories. The test runner (`individual_sql_test.go`) automatically executes these files and validates their output.
+
+### Test File Structure Rules
+
+1. **One Test Query Per File**
+   - Each `.sql` file must contain exactly ONE main test query
+   - Setup queries (CREATE TABLE, INSERT) and cleanup queries (DROP TABLE) are allowed
+   - Do NOT put multiple test scenarios in a single file
+
+2. **File Naming Convention**
+   - Use descriptive names: `test_XX_feature_description.sql`
+   - For split files, use suffixes: `test_XX a_specific_case.sql`, `test_XXb_another_case.sql`
+   - Group related tests with the same number prefix
+
+3. **Required Comments**
+   - Always include a comment describing what the test is testing
+   - Use `-- Expected: N rows` to specify expected row count
+   - Use `-- Expected: no rows` for queries that should return 0 rows
+   - Use `-- Expected: error` for queries that should fail
+   - Mark known failing tests with `-- Status: FAILING`
+
+### Comment Metadata Format
+
+```sql
+-- Test: Description of what this test validates
+-- Expected: 3 rows
+-- Status: FAILING (optional, only for known failures)
+
+-- Setup
+CREATE TABLE test_table (...);
+INSERT INTO test_table VALUES (...);
+
+-- Main test query (ONLY ONE per file)
+SELECT * FROM test_table WHERE condition;
+
+-- Cleanup
+DROP TABLE test_table;
+```
+
+### Examples
+
+#### Working Test Example
+```sql
+-- Test: Basic SELECT with WHERE clause
+-- Expected: 2 rows
+
+CREATE TABLE users (id int, name text);
+INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie');
+
+SELECT * FROM users WHERE id < 3;
+
+DROP TABLE users;
+```
+
+#### Expected Error Example
+```sql
+-- Test: SELECT from non-existent table
+-- Expected: error
+
+SELECT * FROM non_existent_table;
+```
+
+#### Known Failing Test Example
+```sql
+-- Test: CASE expression (not yet implemented)
+-- Expected: 1 rows
+-- Status: FAILING
+
+CREATE TABLE test (id int, value int);
+INSERT INTO test VALUES (1, 10);
+
+SELECT CASE WHEN value > 5 THEN 'high' ELSE 'low' END FROM test;
+
+DROP TABLE test;
+```
+
+### Best Practices
+
+1. **Keep tests focused**: Each file should test one specific feature or edge case
+2. **Use clear test data**: Make it obvious why the expected result is correct
+3. **Clean up after tests**: Always DROP tables created during the test
+4. **Document limitations**: If a test demonstrates a limitation or bug, explain it in comments
+5. **Order matters**: The test runner preserves SQL comments, so place metadata comments before the SQL
+
+### Test Categories
+
+Place test files in the appropriate subdirectory:
+- `crud/` - Basic CREATE, INSERT, SELECT, UPDATE, DELETE operations
+- `joins/` - All types of JOINs
+- `aggregates/` - Aggregate functions (COUNT, SUM, AVG, etc.)
+- `grouping/` - GROUP BY, HAVING, DISTINCT
+- `subqueries/` - IN, EXISTS, scalar subqueries
+- `null_handling/` - NULL value behavior and three-valued logic
+- `type_conversion/` - Type handling and conversions
+- `operators/` - BETWEEN, LIKE, IN/NOT IN, etc.
+- `ordering/` - ORDER BY, LIMIT, OFFSET
+- `error_cases/` - Error conditions and edge cases
+- `comments/` - SQL comment handling
+- `data_types/` - Data type specific tests (boolean, numeric, text, etc.)
