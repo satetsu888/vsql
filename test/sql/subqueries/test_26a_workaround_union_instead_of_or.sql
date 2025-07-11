@@ -1,0 +1,31 @@
+-- Workaround 1: Use UNION instead of OR
+-- Original (doesn't work):
+-- SELECT name FROM users u WHERE EXISTS (SELECT 1 FROM posts p WHERE p.user_id = u.id OR u.active = 1)
+-- Workaround (works):
+-- Expected: 5 rows (all active users + users with posts)
+
+-- Setup
+CREATE TABLE users (id int, name text, active int, country text);
+CREATE TABLE posts (id int, user_id int, title text);
+
+INSERT INTO users VALUES
+  (1, 'Alice', 1, 'Japan'),
+  (2, 'Bob', 1, 'USA'),
+  (3, 'Charlie', 0, 'Japan'),
+  (4, 'David', 0, 'USA'),
+  (5, 'Eve', 1, 'UK');
+
+INSERT INTO posts VALUES
+  (1, 1, 'Post by Alice'),
+  (2, 3, 'Post by Charlie'),
+  (3, 5, 'Post by Eve');
+
+-- Test query
+SELECT name FROM users u WHERE u.active = 1
+UNION
+SELECT name FROM users u WHERE EXISTS (SELECT 1 FROM posts p WHERE p.user_id = u.id)
+ORDER BY name;
+
+-- Cleanup
+DROP TABLE posts;
+DROP TABLE users;
