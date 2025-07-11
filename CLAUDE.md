@@ -47,14 +47,14 @@ go test -v -cover
 
 # Test files are organized by feature in test/sql/ directory:
 # - crud/              # Basic CRUD operations (CREATE, INSERT, SELECT, UPDATE, DELETE)
-# - joins/             # All JOIN types (INNER, LEFT, RIGHT, FULL OUTER, CROSS)
+# - joins/             # All JOIN types including multi-table joins (3+ tables)
 # - aggregates/        # Aggregate functions (COUNT, SUM, AVG, MAX, MIN)
-# - grouping/          # GROUP BY, HAVING, DISTINCT operations
-# - subqueries/        # Subqueries (IN, EXISTS, correlated, scalar)
-# - null_handling/     # Comprehensive NULL value tests
-# - type_conversion/   # Type conversion and comparison tests
-# - operators/         # SQL operators (BETWEEN, LIKE, IN/NOT IN)
-# - ordering/          # ORDER BY, LIMIT, OFFSET tests
+# - grouping/          # GROUP BY, HAVING (with aggregates and OR), DISTINCT
+# - subqueries/        # IN, EXISTS, scalar subqueries in SELECT/WHERE
+# - null_handling/     # Comprehensive NULL value tests with three-valued logic
+# - type_conversion/   # Numeric comparisons, arithmetic expressions, proper type handling
+# - operators/         # BETWEEN, LIKE, IN/NOT IN with NULL handling
+# - ordering/          # ORDER BY with numeric sorting, LIMIT, OFFSET
 # - error_cases/       # Error handling and edge cases
 # - comments/          # SQL comment handling tests
 
@@ -153,8 +153,10 @@ go vet ./...
 - IN clause with value lists (including proper NULL handling)
 - NOT IN clause with value lists (including proper NULL handling)
 - Aggregate functions: COUNT, SUM, AVG, MAX, MIN
+  - SUM returns NULL for empty result sets (SQL standard compliant)
+  - MAX/MIN work correctly with numeric comparisons
 - COUNT(DISTINCT column) - counts unique non-NULL values
-- GROUP BY / HAVING
+- GROUP BY / HAVING (including HAVING with aggregate functions and OR conditions)
 - Subqueries: IN with subqueries, scalar subqueries in WHERE clause, scalar subqueries in SELECT clause
 - DISTINCT queries
 - Column ordering consistency (from CREATE TABLE + dynamic columns)
@@ -166,12 +168,13 @@ go vet ./...
 - Table aliases and qualified column references (e.g., t1.id)
 - SQL comments (single-line -- and multi-line /* */)
 - Scalar subqueries in WHERE clause (e.g., WHERE age > (SELECT AVG(age) FROM users))
+- Arithmetic expressions in WHERE clause (e.g., WHERE price * 2 > 100)
+- Numeric comparisons with proper type handling (not string comparison)
 
 ### Partially Implemented
 - EXISTS/NOT EXISTS subqueries: Basic structure exists but correlated subqueries not supported
 - UNION/UNION ALL: Basic structure exists
-- HAVING clause with aggregate functions: Basic structure exists but re-evaluation of aggregates not supported
-- OFFSET: Basic implementation (test failures indicate partial support)
+- OFFSET: Basic implementation (some edge cases may not work)
 
 ### Not Yet Implemented
 - ILIKE operator (case-insensitive LIKE)
