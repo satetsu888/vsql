@@ -1,7 +1,6 @@
 -- Test 4: Multiple numeric comparisons
 -- Expected: 1 row (id=20)
--- Bug result: may be incorrect
--- Status: FAILING
+-- Test: Verifies multiple numeric comparisons with AND work correctly
 
 -- Setup
 CREATE TABLE numeric_test (

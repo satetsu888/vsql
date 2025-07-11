@@ -1,7 +1,6 @@
 -- Test 6: NULL in arithmetic comparisons
 -- Expected: 2 rows (id=1,3) - NULL comparisons should not match
--- Bug result: may include NULL values
--- Status: FAILING
+-- Test: Verifies NULL values are correctly excluded from comparison operations
 
 -- Setup
 CREATE TABLE null_test (

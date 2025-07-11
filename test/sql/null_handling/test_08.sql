@@ -1,7 +1,6 @@
 -- Test 8: NULL with OR operator  
 -- Expected: 2 rows (id=1,3) - TRUE OR UNKNOWN = TRUE
--- Bug result: may return wrong results
--- Status: FAILING
+-- Test: Verifies OR with NULL comparison handles three-valued logic correctly
 
 -- Setup
 CREATE TABLE null_test (

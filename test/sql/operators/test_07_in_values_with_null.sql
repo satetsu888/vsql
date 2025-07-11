@@ -1,7 +1,6 @@
 -- Test 9: NULL in IN clause
 -- Expected: 2 rows (id=1,4) - NULL in list doesn't match
--- Bug result: may return wrong results
--- Status: FAILING
+-- Test: Verifies that NULL in IN list is handled correctly (NULL doesn't match anything)
 
 -- Setup
 CREATE TABLE null_test (

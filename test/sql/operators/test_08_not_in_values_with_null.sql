@@ -1,7 +1,6 @@
 -- Test 10: NULL in NOT IN clause
 -- Expected: 0 rows (NOT IN with NULL returns UNKNOWN for all non-NULL values)
--- Bug result: may return rows
--- Status: FAILING
+-- Test: Verifies NOT IN with NULL in list returns no rows (correct SQL three-valued logic)
 
 -- Setup
 CREATE TABLE null_test (

@@ -1,7 +1,6 @@
 -- Test 7: NULL with AND operator
 -- Expected: 0 rows (NULL AND TRUE = UNKNOWN)
--- Bug result: may return rows
--- Status: FAILING
+-- Test: Verifies AND with NULL comparison returns no rows
 
 -- Setup
 CREATE TABLE null_test (
