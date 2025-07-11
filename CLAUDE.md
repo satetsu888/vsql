@@ -172,7 +172,10 @@ go vet ./...
 - Numeric comparisons with proper type handling (not string comparison)
 
 ### Partially Implemented
-- EXISTS/NOT EXISTS subqueries: Basic structure exists but correlated subqueries not supported
+- EXISTS/NOT EXISTS subqueries: Basic and correlated subqueries work, but not with:
+  - Nested EXISTS (EXISTS within EXISTS)
+  - GROUP BY/HAVING in the subquery
+  - Complex OR conditions referencing outer table
 - UNION/UNION ALL: Basic structure exists
 - OFFSET: Basic implementation (some edge cases may not work)
 
@@ -182,7 +185,7 @@ go vet ./...
 - COALESCE function
 - Window functions
 - CTEs (WITH clause)
-- Correlated subqueries (for EXISTS and other contexts)
+- Correlated subqueries (for contexts other than EXISTS/NOT EXISTS)
 - Transactions
 - Indexes
 - Constraints
