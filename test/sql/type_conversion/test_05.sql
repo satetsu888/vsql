@@ -1,7 +1,6 @@
 -- Test 5: Comparing numeric columns
 -- Expected: 4 rows where id < quantity
--- Bug result: string comparison of columns
--- Status: FAILING
+-- Test: Verifies numeric column-to-column comparisons work correctly
 
 -- Setup
 CREATE TABLE numeric_test (

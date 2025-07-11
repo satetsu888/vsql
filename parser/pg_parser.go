@@ -620,9 +620,56 @@ func extractValueFromExpr(row storage.Row, node *pg_query.Node) interface{} {
 				return val
 			}
 		}
+	case *pg_query.Node_AExpr:
+		// Handle arithmetic expressions
+		return evaluateArithmeticExpr(row, n.AExpr)
 	}
 	
 	return nil
+}
+
+func evaluateArithmeticExpr(row storage.Row, expr *pg_query.A_Expr) interface{} {
+	// Only handle arithmetic operations
+	if expr.Kind != pg_query.A_Expr_Kind_AEXPR_OP {
+		return nil
+	}
+	
+	// Extract operator
+	var op string
+	if len(expr.Name) > 0 {
+		if str, ok := expr.Name[0].Node.(*pg_query.Node_String_); ok {
+			op = str.String_.Sval
+		}
+	}
+	
+	// Extract left and right values
+	leftVal := extractValueFromExpr(row, expr.Lexpr)
+	rightVal := extractValueFromExpr(row, expr.Rexpr)
+	
+	// Convert to float64 for arithmetic
+	leftNum, err1 := toFloat64(leftVal)
+	rightNum, err2 := toFloat64(rightVal)
+	
+	if err1 != nil || err2 != nil {
+		return nil
+	}
+	
+	// Perform arithmetic operation
+	switch op {
+	case "+":
+		return leftNum + rightNum
+	case "-":
+		return leftNum - rightNum
+	case "*":
+		return leftNum * rightNum
+	case "/":
+		if rightNum == 0 {
+			return nil // Division by zero
+		}
+		return leftNum / rightNum
+	default:
+		return nil
+	}
 }
 
 func extractPgValue(node *pg_query.Node) interface{} {

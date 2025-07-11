@@ -1,6 +1,6 @@
--- Test 6: Arithmetic in WHERE clause (if supported)
--- This may fail completely or give wrong results
--- Status: FAILING
+-- Test 6: Arithmetic in WHERE clause
+-- Expected: 3 rows where price * 2 > 15
+-- Test: Verifies arithmetic expressions in WHERE clause are evaluated correctly
 
 -- Setup
 CREATE TABLE numeric_test (
