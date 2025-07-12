@@ -227,6 +227,12 @@ SQL test files are located in `test/sql/` directory, organized by feature catego
    - Use `-- Expected: error` for queries that should fail
    - Mark known failing tests with `-- Status: FAILING`
 
+4. **Expected Behavior Must Follow PostgreSQL**
+   - The expected behavior defined in tests should conform to PostgreSQL behavior
+   - When PostgreSQL behavior differs from SQL standard, follow PostgreSQL
+   - This project aims for PostgreSQL compatibility, not generic SQL standard compliance
+   - For SQL three-valued logic, NULL comparisons, and boolean operations, follow PostgreSQL rules
+
 ### Comment Metadata Format
 
 ```sql
