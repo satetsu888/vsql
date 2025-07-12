@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	pg_query "github.com/pganalyze/pg_query_go/v5"
-	"vsql/storage"
+	"github.com/satetsu888/vsql/storage"
 )
 
 func ParsePostgreSQL(query string) (*pg_query.ParseResult, error) {

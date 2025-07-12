@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"vsql/parser"
-	"vsql/storage"
+	"github.com/satetsu888/vsql/parser"
+	"github.com/satetsu888/vsql/storage"
 )
 
 type Server struct {

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"syscall"
 
-	"vsql/parser"
-	"vsql/server"
-	"vsql/storage"
+	"github.com/satetsu888/vsql/parser"
+	"github.com/satetsu888/vsql/server"
+	"github.com/satetsu888/vsql/storage"
 )
 
 // fileList is a custom flag type for accepting multiple file paths

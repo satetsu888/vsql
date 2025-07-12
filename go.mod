@@ -1,4 +1,4 @@
-module vsql
+module github.com/satetsu888/vsql
 
 go 1.24
 
