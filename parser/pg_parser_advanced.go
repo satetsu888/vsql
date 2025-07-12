@@ -136,7 +136,8 @@ func executePgSelectWithContext(stmt *pg_query.SelectStmt, ctx *QueryContext) ([
 
 func processFromClause(ctx *QueryContext, fromClause []*pg_query.Node) ([]storage.Row, error) {
 	if len(fromClause) == 0 {
-		return nil, fmt.Errorf("no FROM clause specified")
+		// PostgreSQL-compatible: SELECT without FROM returns a single empty row
+		return []storage.Row{make(storage.Row)}, nil
 	}
 
 	// If there's only one item in FROM clause, process it directly
