@@ -1,8 +1,6 @@
 -- Test: Simple OR with outer table column reference
--- Status: Expected to FAIL - OR conditions referencing outer tables not fully supported
--- Expected: Should return all active users (Alice, Bob, Eve)
--- Actual: Only returns users with posts (Alice)
--- Issue: The OR condition "u.active = true" is not evaluated correctly
+-- Expected: 3 rows (Alice, Bob, Eve - all active users)
+-- Status: FAILING - OR conditions referencing outer tables not fully supported, only returns users with posts
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);

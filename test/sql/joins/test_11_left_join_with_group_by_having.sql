@@ -30,6 +30,7 @@ FROM products p
 LEFT JOIN orders o ON p.id = o.product_id
 GROUP BY p.id, p.name, p.stock
 HAVING p.stock > 0;
+-- Expected: 5 rows
 
 -- Cleanup
 DROP TABLE orders;

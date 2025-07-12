@@ -1,5 +1,5 @@
--- Workaround 1: Use integer (0/1)
--- This works correctly
+-- Test: Workaround - Use integer (0/1) - This works correctly
+-- Expected: 1 row
 
 CREATE TABLE int_bool (id int, active int);
 INSERT INTO int_bool VALUES (1, 1), (2, 0);

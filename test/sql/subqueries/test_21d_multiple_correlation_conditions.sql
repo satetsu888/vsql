@@ -1,6 +1,6 @@
 -- Test: Multiple correlation conditions
--- Expected to FAIL: Multiple references to outer table
--- Should return: Alice, Eve (employees with salary > department budget / 5)
+-- Expected: 2 rows (Alice, Eve - employees with salary > department budget / 5)
+-- Status: FAILING - Multiple references to outer table
 
 -- Setup
 CREATE TABLE employees (id int, name text, department_id int, salary int);

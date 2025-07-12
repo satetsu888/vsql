@@ -1,7 +1,6 @@
 -- Test: Boolean comparison
--- Status: Boolean values are not properly compared
 -- Expected: 1 row (id=1 with true)
--- Actual: 0 rows
+-- Status: FAILING - Boolean values are not properly compared, returns 0 rows
 
 CREATE TABLE bool_compare (id int, active boolean);
 INSERT INTO bool_compare VALUES (1, true), (2, false);

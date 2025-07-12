@@ -1,6 +1,7 @@
 -- Test 22: NULL in JOIN conditions
 -- Expected: NULL values in JOIN conditions should not match
 -- Status: May have issues with NULL join handling
+-- Expected: 1 row
 
 -- Setup
 CREATE TABLE left_table (id INTEGER, join_key INTEGER, data TEXT);

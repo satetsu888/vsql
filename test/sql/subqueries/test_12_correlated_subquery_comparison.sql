@@ -1,4 +1,5 @@
 -- Test 8: Correlated subquery with comparison
+-- Expected: 2 rows
 -- Testing correlated subquery in WHERE clause
 -- Status: May fail - correlated subqueries not fully supported
 

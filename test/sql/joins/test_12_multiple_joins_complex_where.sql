@@ -41,6 +41,7 @@ WHERE o.created_at >= '2024-01-02'
   AND p.price > 50
   AND c.parent_id = 1
 ORDER BY order_total DESC;
+-- Expected: 4 rows
 
 -- Cleanup
 DROP TABLE orders;

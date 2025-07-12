@@ -1,6 +1,7 @@
 -- Test 20: NULL in arithmetic operations
 -- Expected: All results should be NULL (NULL propagates through arithmetic)
 -- Status: May fail if NULL arithmetic not properly implemented
+-- Expected: 3 rows
 
 -- Setup
 CREATE TABLE test_null (id INTEGER, val INTEGER);

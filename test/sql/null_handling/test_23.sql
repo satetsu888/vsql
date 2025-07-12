@@ -1,6 +1,7 @@
 -- Test 23: NULL with BETWEEN operator
 -- Expected: NULL comparisons with BETWEEN should return no match
 -- Status: BETWEEN implemented, should handle NULL correctly
+-- Expected: 1 row
 
 -- Setup
 CREATE TABLE test_null (id INTEGER, val INTEGER);

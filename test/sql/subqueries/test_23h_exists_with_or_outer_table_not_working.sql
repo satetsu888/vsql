@@ -1,7 +1,6 @@
--- Test: EXISTS with OR referencing outer table ✗
--- Status: OR condition referencing outer table is ignored
--- Expected: All active users (even without posts)
--- Actual: Only users with posts
+-- Test: EXISTS with OR referencing outer table
+-- Expected: 2 rows (Alice, Bob - all active users even without posts)  
+-- Status: FAILING - OR condition referencing outer table is ignored, only returns users with posts
 
 -- Setup
 CREATE TABLE users (id int, name text, active boolean);

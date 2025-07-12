@@ -1,4 +1,5 @@
 -- Test 4: Subquery in FROM clause (derived table)
+-- Expected: 3 rows
 -- Testing derived tables in FROM clause
 -- Status: May fail - derived tables not fully supported
 

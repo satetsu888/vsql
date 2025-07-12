@@ -16,6 +16,7 @@ SELECT
   c2.name as parent_category
 FROM categories c1
 LEFT JOIN categories c2 ON c1.parent_id = c2.id;
+-- Expected: 4 rows
 
 -- Cleanup
 DROP TABLE categories;

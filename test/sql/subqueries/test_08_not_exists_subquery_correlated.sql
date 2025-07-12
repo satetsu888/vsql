@@ -1,4 +1,5 @@
 -- Test 6: NOT EXISTS subquery
+-- Expected: 2 rows
 -- Testing NOT EXISTS with correlated subquery
 -- Status: May fail - correlated subqueries not fully supported
 

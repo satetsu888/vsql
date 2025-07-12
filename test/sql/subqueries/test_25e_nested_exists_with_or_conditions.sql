@@ -1,6 +1,8 @@
 -- Test: Nested EXISTS with OR conditions
 -- Expected: Should return users who have posts with comments OR are active
 -- Actual: Only returns users with posts that have comments
+-- Expected: 3 rows
+-- Status: FAILING
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);

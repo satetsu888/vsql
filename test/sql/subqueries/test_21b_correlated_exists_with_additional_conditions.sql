@@ -1,6 +1,6 @@
 -- Test: Correlated EXISTS with additional conditions
--- Expected to FAIL: References outer table 'e' in subquery  
--- Should return: Alice, Eve (salary > avg in their department)
+-- Expected: 2 rows (Alice, Eve - salary > avg in their department)
+-- Status: FAILING - References outer table 'e' in subquery
 
 -- Setup
 CREATE TABLE employees (id int, name text, department_id int, salary int);

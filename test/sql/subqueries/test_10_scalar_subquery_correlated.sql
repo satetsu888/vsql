@@ -1,4 +1,5 @@
 -- Test 3: Subquery in SELECT clause
+-- Expected: 2 rows
 -- Testing correlated subqueries in SELECT list
 -- Status: May fail - correlated subqueries not fully supported
 

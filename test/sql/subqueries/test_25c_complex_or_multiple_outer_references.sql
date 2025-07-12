@@ -1,6 +1,6 @@
 -- Test: Complex OR with multiple outer references
--- Expected: Should return active users OR users from USA (Alice, Bob, David, Eve)
--- Actual: Only returns users with posts
+-- Expected: 4 rows (Alice, Bob, David, Eve - active users OR users from USA)
+-- Status: FAILING - Only returns users with posts
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);

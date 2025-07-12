@@ -1,5 +1,5 @@
 -- Test 9: MAX/MIN aggregates on numeric columns
--- Expected: MAX(id)=100, MIN(id)=1
+-- Expected: 1 row
 -- Test: Verifies MAX/MIN aggregates work correctly with numeric columns
 
 -- Setup

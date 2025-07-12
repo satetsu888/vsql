@@ -33,6 +33,7 @@ INNER JOIN orders o ON p.id = o.product_id
 GROUP BY p.category
 HAVING SUM(o.quantity) > 1 
   AND COUNT(DISTINCT o.user_id) >= 2;
+-- Expected: 2 rows
 
 -- Cleanup
 DROP TABLE orders;

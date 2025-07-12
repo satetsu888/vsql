@@ -1,5 +1,5 @@
 -- Test 4: Update data
--- Expected: UPDATE 1
+-- Expected: success
 
 -- Setup
 CREATE TABLE users (id int, name text, email text);

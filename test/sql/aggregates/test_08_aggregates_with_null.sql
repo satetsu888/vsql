@@ -18,9 +18,11 @@ INSERT INTO null_test (id, name, value, description) VALUES
     (5, NULL, NULL, NULL);
 
 -- Test query 1: COUNT with NULLs
+-- Expected: 1 row
 SELECT COUNT(*) as total_rows, COUNT(value) as non_null_values FROM null_test;
 
 -- Test query 2: Other aggregates with NULLs (should ignore NULL values)
+-- Expected: 1 row
 SELECT 
     SUM(value) as sum_val,     -- Should be 300 (100+200+0)
     AVG(value) as avg_val,     -- Should be 100 (300/3)

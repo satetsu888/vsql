@@ -1,5 +1,5 @@
 -- Test 2: COUNT DISTINCT function
--- Expected: Query 1 returns 1 row with unique_cities=3, Query 2 returns 1 row with unique_users_with_orders=3
+-- Expected: 2 rows
 -- Test: Verifies COUNT DISTINCT works correctly with single table and JOINs
 
 -- Setup

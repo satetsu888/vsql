@@ -1,6 +1,7 @@
 -- Test 11: COUNT with NULLs
 -- Expected: COUNT(*) = 5, COUNT(value) = 3
 -- Bug result: may count NULLs incorrectly
+-- Expected: 1 row
 
 -- Create test table
 CREATE TABLE null_test (

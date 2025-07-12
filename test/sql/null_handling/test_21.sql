@@ -1,6 +1,8 @@
 -- Test 21: NULL in string concatenation
 -- Expected: String concatenation with NULL should return NULL
 -- Status: May fail if string concatenation not implemented
+-- Expected: 3 rows
+-- Status: FAILING
 
 -- Setup
 CREATE TABLE test_null (id INTEGER, first_name TEXT, last_name TEXT);

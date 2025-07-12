@@ -1,6 +1,7 @@
 -- Test 15: Aggregate functions with all NULL values
 -- Expected: SUM/AVG/MAX/MIN should return NULL
 -- Bug result: may return 0 or error
+-- Expected: 1 row
 
 -- Create test table
 CREATE TABLE null_test (

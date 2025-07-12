@@ -1,6 +1,7 @@
 -- Test 13: ORDER BY with NULLs
 -- Expected: NULLs should be sorted consistently (either first or last)
 -- Bug result: may sort inconsistently
+-- Expected: 5 rows
 
 -- Create test table
 CREATE TABLE null_test (

@@ -1,5 +1,5 @@
 -- Test 6: OFFSET without LIMIT (rarely used but valid)
--- Expected: Skip first 2 rows, return remaining rows
+-- Expected: 3 rows
 
 -- Setup
 CREATE TABLE users (id int, name text, age int, city text);

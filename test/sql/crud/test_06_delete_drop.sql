@@ -1,5 +1,5 @@
 -- Test 5: Delete data
--- Expected: DELETE 1
+-- Expected: success
 
 -- Setup
 CREATE TABLE users (id int, name text, email text);

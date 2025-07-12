@@ -1,4 +1,5 @@
 -- Test 5: EXISTS subquery
+-- Expected: 1 row
 -- Testing EXISTS with correlated subquery
 -- Status: May fail - correlated subqueries not fully supported
 

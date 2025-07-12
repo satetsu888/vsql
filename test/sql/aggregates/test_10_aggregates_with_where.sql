@@ -20,6 +20,7 @@ INSERT INTO sales (id, product, category, amount, quantity) VALUES
     (6, 'Keyboard', 'Electronics', 75.00, 3);
 
 -- Test query 1: Aggregates with WHERE clause
+-- Expected: 1 row
 SELECT 
     COUNT(*) as electronics_count,
     SUM(amount) as total_amount,
@@ -30,6 +31,7 @@ FROM sales
 WHERE category = 'Electronics';
 
 -- Test query 2: Aggregates with complex WHERE clause
+-- Expected: 1 row
 SELECT 
     COUNT(*) as expensive_items,
     SUM(amount * quantity) as total_revenue

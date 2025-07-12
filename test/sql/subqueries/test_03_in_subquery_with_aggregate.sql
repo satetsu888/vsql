@@ -1,4 +1,5 @@
 -- Test 7: IN subquery with aggregation
+-- Expected: 1 row
 -- Testing IN clause with subquery containing GROUP BY and HAVING
 
 -- Setup

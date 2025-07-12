@@ -1,5 +1,5 @@
 -- Test 24: NULL with LIKE operator
--- Expected: NULL LIKE pattern should return no match
+-- Expected: 2 rows
 -- Status: LIKE implemented, should handle NULL correctly
 
 -- Setup

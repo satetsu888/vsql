@@ -1,5 +1,5 @@
--- Workaround 2: Use text ('true'/'false')
--- This also works correctly
+-- Test: Workaround - Use text ('true'/'false') - This also works correctly
+-- Expected: 1 row
 
 CREATE TABLE text_bool (id int, active text);
 INSERT INTO text_bool VALUES (1, 'true'), (2, 'false');

@@ -1,6 +1,6 @@
 -- Test: Boolean in EXISTS with OR (doesn't work)
 -- Expected: 2 rows (Alice, Bob - all active users)
--- Actual: 1 row (only Alice who has posts)
+-- Status: FAILING - Returns only 1 row (Alice who has posts)
 
 CREATE TABLE users_bool (id int, name text, active boolean);
 CREATE TABLE posts_bool (user_id int);

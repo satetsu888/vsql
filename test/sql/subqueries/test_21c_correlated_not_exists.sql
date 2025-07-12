@@ -1,6 +1,6 @@
 -- Test: Correlated NOT EXISTS
--- Expected to FAIL: References outer table 'e' in subquery
--- Should return: empty (all employees have departments)
+-- Expected: no rows (all employees have departments)
+-- Status: FAILING - References outer table 'e' in subquery
 
 -- Setup
 CREATE TABLE employees (id int, name text, department_id int, salary int);

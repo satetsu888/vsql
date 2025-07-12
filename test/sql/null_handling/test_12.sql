@@ -1,6 +1,7 @@
 -- Test 12: GROUP BY with NULLs
 -- Expected: NULL values should be grouped together
 -- Bug result: may handle NULL grouping incorrectly
+-- Expected: 4 rows
 
 -- Create test table
 CREATE TABLE null_test (

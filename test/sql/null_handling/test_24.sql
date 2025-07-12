@@ -1,6 +1,7 @@
 -- Test 24: NULL with LIKE operator
 -- Expected: NULL LIKE pattern should return no match
 -- Status: LIKE implemented, should handle NULL correctly
+-- Expected: 2 rows
 
 -- Setup
 CREATE TABLE test_null (id INTEGER, name TEXT);

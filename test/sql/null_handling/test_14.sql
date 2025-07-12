@@ -1,6 +1,7 @@
 -- Test 14: DISTINCT with NULLs
 -- Expected: Should treat all NULLs as one distinct value
 -- Bug result: may handle incorrectly
+-- Expected: 4 rows
 
 -- Create test table
 CREATE TABLE null_test (

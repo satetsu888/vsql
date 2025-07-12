@@ -32,6 +32,7 @@ FROM orders o
 INNER JOIN products p ON o.product_id = p.id
 WHERE p.category IN ('Computers', 'Phones')
 ORDER BY o.created_at DESC;
+-- Expected: 3 rows
 
 -- Cleanup
 DROP TABLE orders;

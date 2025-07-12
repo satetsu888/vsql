@@ -1,6 +1,6 @@
 -- Test: Simple correlated EXISTS
--- Expected to FAIL: References outer table 'e' in subquery
--- Should return: Alice, Bob, Charlie, David, Eve (all have matching departments)
+-- Expected: 5 rows (Alice, Bob, Charlie, David, Eve - all have matching departments)
+-- Status: FAILING - References outer table 'e' in subquery
 
 -- Setup
 CREATE TABLE employees (id int, name text, department_id int, salary int);

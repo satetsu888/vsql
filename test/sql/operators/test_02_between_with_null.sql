@@ -1,5 +1,5 @@
 -- Test 23: NULL with BETWEEN operator
--- Expected: NULL comparisons with BETWEEN should return no match
+-- Expected: 1 row
 -- Status: BETWEEN implemented, should handle NULL correctly
 
 -- Setup

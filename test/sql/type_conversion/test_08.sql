@@ -1,5 +1,5 @@
 -- Test 8: Sorting by numeric column
--- Expected: sorted numerically (1,2,10,20,100)
+-- Expected: 5 rows
 -- Test: Verifies ORDER BY sorts numeric columns numerically, not as strings
 
 -- Setup

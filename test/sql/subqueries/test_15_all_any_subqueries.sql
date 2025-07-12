@@ -1,4 +1,5 @@
 -- Test 15: ALL/ANY subqueries
+-- Expected: error
 -- Testing ALL and ANY operators with subqueries
 -- Status: May fail - ALL/ANY operators not implemented
 

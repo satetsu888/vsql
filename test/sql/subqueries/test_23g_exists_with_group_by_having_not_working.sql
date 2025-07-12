@@ -1,6 +1,6 @@
--- Test: EXISTS with GROUP BY/HAVING ✗
--- Status: Returns 0 rows instead of expected results
--- This query attempts to use aggregate functions in EXISTS subquery
+-- Test: EXISTS with GROUP BY/HAVING - This query attempts to use aggregate functions in EXISTS subquery
+-- Expected: 1 rows (Alice - has more than 1 post)
+-- Status: FAILING - Returns 0 rows instead of expected results
 
 -- Setup
 CREATE TABLE users (id int, name text, active boolean);
