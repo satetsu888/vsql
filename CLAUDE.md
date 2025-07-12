@@ -19,14 +19,20 @@ go build -o vsql
 # Run on custom port
 ./vsql -port 5433
 
-# Execute query directly without starting server
-./vsql -c "SELECT * FROM users;"
+# Execute query and exit (test mode)
+./vsql -c "SELECT * FROM users;" -q
 
-# Execute multiple queries
+# Execute query then start server (seed data)
 ./vsql -c "CREATE TABLE users (id int, name text); INSERT INTO users VALUES (1, 'Alice');"
 
-# Execute SQL from file
-./vsql -f queries.sql
+# Execute SQL from file and exit
+./vsql -f queries.sql -q
+
+# Execute SQL from file as seed data then start server
+./vsql -f seed.sql
+
+# Execute both file and command (file runs first)
+./vsql -f schema.sql -c "INSERT INTO users VALUES (1, 'Alice');" -q
 
 # Show help
 ./vsql -h
@@ -84,11 +90,13 @@ go vet ./...
 ### Core Components
 
 1. **Main Module** (`main.go`)
-   - Command-line interface with `-port`, `-c`, `-f`, and `-h` options
+   - Command-line interface with `-port`, `-c`, `-f`, `-q`, and `-h` options
    - Can run as server or execute queries directly
+   - `-q` flag: quit after executing commands (test mode)
+   - Without `-q`: executes commands then starts server (seed data mode)
+   - When both `-f` and `-c` are specified, `-f` executes first
    - Supports executing multiple SQL statements separated by semicolons
    - Intelligent SQL statement splitter that respects comments and string literals
-   - `-f` option to execute SQL from files
 
 2. **Parser Module** (`parser/`)
    - `pg_parser.go`: Basic SQL operations (CREATE, INSERT, SELECT, UPDATE, DELETE, DROP)

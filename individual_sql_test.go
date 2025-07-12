@@ -101,7 +101,7 @@ func runIndividualSQLFile(t *testing.T, filePath string) {
 	}
 
 	// Use the original content without stripping comments
-	cmd := exec.Command("./vsql", "-c", string(content))
+	cmd := exec.Command("./vsql", "-c", string(content), "-q")
 	output, err := cmd.CombinedOutput()
 
 	// If test is marked as failing, skip validation

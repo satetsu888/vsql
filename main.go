@@ -18,11 +18,13 @@ func main() {
 	var port int
 	var command string
 	var filePath string
+	var quit bool
 	var help bool
 	
 	flag.IntVar(&port, "port", 5432, "Port to listen on")
-	flag.StringVar(&command, "c", "", "Execute command and exit")
-	flag.StringVar(&filePath, "f", "", "Execute SQL from file and exit")
+	flag.StringVar(&command, "c", "", "Execute command")
+	flag.StringVar(&filePath, "f", "", "Execute SQL from file")
+	flag.BoolVar(&quit, "q", false, "Quit after executing commands (don't start server)")
 	flag.BoolVar(&help, "h", false, "Show help")
 	flag.BoolVar(&help, "help", false, "Show help")
 	flag.Parse()
@@ -33,8 +35,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  vsql [options]\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -port PORT    Port to listen on (default: 5432)\n")
-		fmt.Fprintf(os.Stderr, "  -c COMMAND    Execute command and exit\n")
-		fmt.Fprintf(os.Stderr, "  -f FILE       Execute SQL from file and exit\n")
+		fmt.Fprintf(os.Stderr, "  -c COMMAND    Execute command (runs after -f if both are specified)\n")
+		fmt.Fprintf(os.Stderr, "  -f FILE       Execute SQL from file (runs before -c if both are specified)\n")
+		fmt.Fprintf(os.Stderr, "  -q            Quit after executing commands (don't start server)\n")
 		fmt.Fprintf(os.Stderr, "  -h, -help     Show this help message\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
 		fmt.Fprintf(os.Stderr, "  # Start server on default port\n")
@@ -42,24 +45,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  # Start server on custom port\n")
 		fmt.Fprintf(os.Stderr, "  vsql -port 5433\n\n")
 		fmt.Fprintf(os.Stderr, "  # Execute query and exit\n")
-		fmt.Fprintf(os.Stderr, "  vsql -c \"SELECT * FROM users;\"\n\n")
-		fmt.Fprintf(os.Stderr, "  # Execute multiple queries\n")
+		fmt.Fprintf(os.Stderr, "  vsql -c \"SELECT * FROM users;\" -q\n\n")
+		fmt.Fprintf(os.Stderr, "  # Execute queries then start server (seed data)\n")
 		fmt.Fprintf(os.Stderr, "  vsql -c \"CREATE TABLE users (id int, name text); INSERT INTO users VALUES (1, 'Alice');\"\n\n")
-		fmt.Fprintf(os.Stderr, "  # Execute SQL from file\n")
-		fmt.Fprintf(os.Stderr, "  vsql -f queries.sql\n")
+		fmt.Fprintf(os.Stderr, "  # Execute SQL from file and exit\n")
+		fmt.Fprintf(os.Stderr, "  vsql -f queries.sql -q\n\n")
+		fmt.Fprintf(os.Stderr, "  # Execute SQL from file as seed data then start server\n")
+		fmt.Fprintf(os.Stderr, "  vsql -f seed.sql\n")
 		os.Exit(0)
 	}
 
 	store := storage.NewDataStore()
 	metaStore := storage.NewMetaStore()
 
-	// If command is provided, execute it and exit
-	if command != "" {
-		executeCommand(command, store, metaStore)
-		return
-	}
-
-	// If file path is provided, read and execute it
+	// Execute file if provided (first)
 	if filePath != "" {
 		content, err := os.ReadFile(filePath)
 		if err != nil {
@@ -67,6 +66,15 @@ func main() {
 			os.Exit(1)
 		}
 		executeCommand(string(content), store, metaStore)
+	}
+
+	// Execute command if provided (second)
+	if command != "" {
+		executeCommand(command, store, metaStore)
+	}
+
+	// If quit flag is set, exit after executing commands
+	if quit {
 		return
 	}
 
