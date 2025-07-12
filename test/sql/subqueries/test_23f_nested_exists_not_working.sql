@@ -1,6 +1,5 @@
 -- Test: Nested EXISTS - This query attempts to use EXISTS inside another EXISTS
 -- Expected: 2 rows (Alice, Bob - active users with posts)
--- Status: FAILING - Returns 0 rows instead of expected results
 
 -- Setup
 CREATE TABLE users (id int, name text, active boolean);

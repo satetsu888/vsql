@@ -1,6 +1,5 @@
 -- Test: Simple OR with outer table column reference
--- Expected: 3 rows (Alice, Bob, Eve - all active users)
--- Status: FAILING - OR conditions referencing outer tables not fully supported, only returns users with posts
+-- Expected: 4 rows (Alice, Bob, Charlie, Eve - all active users OR users with posts)
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);
