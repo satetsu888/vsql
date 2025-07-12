@@ -1,9 +1,7 @@
 -- Workaround 3: Use LEFT JOIN instead of EXISTS for some cases
 -- Original (doesn't work):
 -- SELECT name FROM users u WHERE EXISTS (SELECT 1 FROM posts p WHERE p.user_id = u.id OR u.country = 'Japan')
--- Workaround (works):
--- Expected: 4 rows (users from Japan or with posts)
--- Status: FAILING - Returns 5 rows instead of 4
+-- Expected: 3 rows (users from Japan: Alice, Charlie OR users with posts: Alice, Charlie, Eve)
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);

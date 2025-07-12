@@ -314,10 +314,25 @@ func performJoinWithAliases(leftRows, rightRows []storage.Row, joinExpr *pg_quer
 			}
 			if !matched {
 				// Add left row with NULLs for right columns
-				mergedRow := make(storage.Row)
-				for k, v := range leftRow {
-					mergedRow[k] = v
+				// We need to create a dummy right row with all NULL values
+				nullRightRow := make(storage.Row)
+				
+				// Get column names from the right table
+				if rightAlias != "" && ctx.tables[rightAlias] != nil {
+					// Get columns from metastore
+					rightTableName := ctx.tables[rightAlias].name
+					rightColumns := ctx.metaStore.GetTableColumns(rightTableName)
+					for _, col := range rightColumns {
+						nullRightRow[col] = nil
+					}
+				} else if len(rightRows) > 0 {
+					// If no alias or metadata, infer columns from first row
+					for k := range rightRows[0] {
+						nullRightRow[k] = nil
+					}
 				}
+				
+				mergedRow := mergeRowsWithAliases(leftRow, nullRightRow, leftAlias, rightAlias)
 				result = append(result, mergedRow)
 			}
 		}
@@ -334,10 +349,25 @@ func performJoinWithAliases(leftRows, rightRows []storage.Row, joinExpr *pg_quer
 			}
 			if !matched {
 				// Add right row with NULLs for left columns
-				mergedRow := make(storage.Row)
-				for k, v := range rightRow {
-					mergedRow[k] = v
+				// We need to create a dummy left row with all NULL values
+				nullLeftRow := make(storage.Row)
+				
+				// Get column names from the left table
+				if leftAlias != "" && ctx.tables[leftAlias] != nil {
+					// Get columns from metastore
+					leftTableName := ctx.tables[leftAlias].name
+					leftColumns := ctx.metaStore.GetTableColumns(leftTableName)
+					for _, col := range leftColumns {
+						nullLeftRow[col] = nil
+					}
+				} else if len(leftRows) > 0 {
+					// If no alias or metadata, infer columns from first row
+					for k := range leftRows[0] {
+						nullLeftRow[k] = nil
+					}
 				}
+				
+				mergedRow := mergeRowsWithAliases(nullLeftRow, rightRow, leftAlias, rightAlias)
 				result = append(result, mergedRow)
 			}
 		}
@@ -361,10 +391,20 @@ func performJoinWithAliases(leftRows, rightRows []storage.Row, joinExpr *pg_quer
 		// Add unmatched left rows
 		for i, leftRow := range leftRows {
 			if !leftMatched[i] {
-				mergedRow := make(storage.Row)
-				for k, v := range leftRow {
-					mergedRow[k] = v
+				// Create NULL right row
+				nullRightRow := make(storage.Row)
+				if rightAlias != "" && ctx.tables[rightAlias] != nil {
+					rightTableName := ctx.tables[rightAlias].name
+					rightColumns := ctx.metaStore.GetTableColumns(rightTableName)
+					for _, col := range rightColumns {
+						nullRightRow[col] = nil
+					}
+				} else if len(rightRows) > 0 {
+					for k := range rightRows[0] {
+						nullRightRow[k] = nil
+					}
 				}
+				mergedRow := mergeRowsWithAliases(leftRow, nullRightRow, leftAlias, rightAlias)
 				result = append(result, mergedRow)
 			}
 		}
@@ -372,10 +412,20 @@ func performJoinWithAliases(leftRows, rightRows []storage.Row, joinExpr *pg_quer
 		// Add unmatched right rows
 		for j, rightRow := range rightRows {
 			if !rightMatched[j] {
-				mergedRow := make(storage.Row)
-				for k, v := range rightRow {
-					mergedRow[k] = v
+				// Create NULL left row
+				nullLeftRow := make(storage.Row)
+				if leftAlias != "" && ctx.tables[leftAlias] != nil {
+					leftTableName := ctx.tables[leftAlias].name
+					leftColumns := ctx.metaStore.GetTableColumns(leftTableName)
+					for _, col := range leftColumns {
+						nullLeftRow[col] = nil
+					}
+				} else if len(leftRows) > 0 {
+					for k := range leftRows[0] {
+						nullLeftRow[k] = nil
+					}
 				}
+				mergedRow := mergeRowsWithAliases(nullLeftRow, rightRow, leftAlias, rightAlias)
 				result = append(result, mergedRow)
 			}
 		}
