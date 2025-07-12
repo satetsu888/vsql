@@ -57,6 +57,8 @@ go test -v -cover
 # - ordering/          # ORDER BY with numeric sorting, LIMIT, OFFSET
 # - error_cases/       # Error handling and edge cases
 # - comments/          # SQL comment handling tests
+# - functions/         # String functions (UPPER, LOWER), COALESCE
+# - data_types/        # Data type specific tests (boolean, numeric, text, etc.)
 
 # Manual testing with psql
 psql -h localhost -p 5432 -U any_user -d any_database
@@ -149,7 +151,7 @@ go vet ./...
 - Schema-less table design (can insert new columns at any time)
 - Complex WHERE clauses with AND, OR, NOT
 - NULL handling with SQL three-valued logic
-- IS NULL / IS NOT NULL operators
+- IS NULL / IS NOT NULL operators (including in SELECT and WHERE clauses)
 - IN clause with value lists (including proper NULL handling)
 - NOT IN clause with value lists (including proper NULL handling)
 - Aggregate functions: COUNT, SUM, AVG, MAX, MIN
@@ -158,33 +160,38 @@ go vet ./...
 - COUNT(DISTINCT column) - counts unique non-NULL values
 - GROUP BY / HAVING (including HAVING with aggregate functions and OR conditions)
 - Subqueries: IN with subqueries, scalar subqueries in WHERE clause, scalar subqueries in SELECT clause
+- EXISTS/NOT EXISTS subqueries: Both basic and correlated subqueries work, including:
+  - ✓ Nested EXISTS (EXISTS within EXISTS)
+  - ✓ GROUP BY/HAVING in the subquery (including aggregate functions not in SELECT)
+  - ✓ Complex OR conditions referencing outer table
+  - ✓ Proper handling of qualified column references in correlated subqueries
 - DISTINCT queries
 - Column ordering consistency (from CREATE TABLE + dynamic columns)
 - BETWEEN / NOT BETWEEN operators
 - LIKE operator (with % and _ wildcards)
 - NOT LIKE operator
 - JOINs: INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN, CROSS JOIN
+  - Proper NULL handling for non-matching rows in outer joins
+  - Qualified column references work correctly in JOIN queries
+  - Multi-table JOINs with proper column resolution
 - ORDER BY with LIMIT and OFFSET (including ORDER BY with aggregates)
 - Table aliases and qualified column references (e.g., t1.id)
 - SQL comments (single-line -- and multi-line /* */)
 - Scalar subqueries in WHERE clause (e.g., WHERE age > (SELECT AVG(age) FROM users))
 - Arithmetic expressions in WHERE clause (e.g., WHERE price * 2 > 100)
 - Numeric comparisons with proper type handling (not string comparison)
+- String functions: UPPER, LOWER
+- COALESCE function (returns first non-NULL argument)
 
 ### Partially Implemented
-- EXISTS/NOT EXISTS subqueries: Basic and correlated subqueries work, including:
-  - ✓ Nested EXISTS (EXISTS within EXISTS)
-  - ✓ GROUP BY/HAVING in the subquery (including aggregate functions not in SELECT)
-  - ✓ Complex OR conditions referencing outer table (works with proper data types, see note on boolean handling)
-- UNION/UNION ALL: Basic structure exists
-- OFFSET: Basic implementation (some edge cases may not work)
+- UNION/UNION ALL: Basic structure exists but not fully tested
 - Boolean type: Boolean literals (true/false) are not properly stored or compared
   - Workaround: Use integer (0/1) or text ('true'/'false') instead
+  - Note: IS NULL/IS NOT NULL expressions return boolean values correctly
 
 ### Not Yet Implemented
 - ILIKE operator (case-insensitive LIKE)
 - CASE expressions
-- COALESCE function
 - Window functions
 - CTEs (WITH clause)
 - Correlated subqueries (for contexts other than EXISTS/NOT EXISTS)
@@ -298,3 +305,4 @@ Place test files in the appropriate subdirectory:
 - `error_cases/` - Error conditions and edge cases
 - `comments/` - SQL comment handling
 - `data_types/` - Data type specific tests (boolean, numeric, text, etc.)
+- `functions/` - SQL functions (UPPER, LOWER, COALESCE, etc.)
