@@ -1,6 +1,5 @@
 -- Test: OR condition mixing inner and outer table columns
 -- Expected: 3 rows (Alice, Charlie, Eve - users who have posts OR are from Japan)
--- Status: FAILING - Only returns users with posts, might work by coincidence
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);
