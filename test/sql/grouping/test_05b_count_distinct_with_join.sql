@@ -1,7 +1,6 @@
--- Test 2: COUNT DISTINCT function
--- Expected: 2 rows
--- Status: FAILING - Expected 2 rows but returns 1 row
--- Test: Verifies COUNT DISTINCT works correctly with single table and JOINs
+-- Test: COUNT DISTINCT function - With JOIN
+-- Expected: 1 row
+-- Test: Verifies COUNT DISTINCT works correctly with JOINs
 
 -- Setup
 CREATE TABLE users (id int, name text, age int, city text);
@@ -20,10 +19,7 @@ INSERT INTO orders (id, user_id, product, amount) VALUES
   (4, 3, 'Monitor', 300),
   (5, 2, 'Laptop', 1500);
 
--- Test Query - Simple COUNT DISTINCT
-SELECT COUNT(DISTINCT u.city) as unique_cities FROM users u;
-
--- Test Query 2 - COUNT DISTINCT with JOIN
+-- Test Query - COUNT DISTINCT with JOIN
 SELECT COUNT(DISTINCT u.id) as unique_users_with_orders
 FROM users u
 INNER JOIN orders o ON u.id = o.user_id;
