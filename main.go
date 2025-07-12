@@ -26,15 +26,27 @@ func (f *fileList) Set(value string) error {
 	return nil
 }
 
+// commandList is a custom flag type for accepting multiple commands
+type commandList []string
+
+func (c *commandList) String() string {
+	return strings.Join(*c, "; ")
+}
+
+func (c *commandList) Set(value string) error {
+	*c = append(*c, value)
+	return nil
+}
+
 func main() {
 	var port int
-	var command string
+	var commands commandList
 	var filePaths fileList
 	var quit bool
 	var help bool
 	
 	flag.IntVar(&port, "port", 5432, "Port to listen on")
-	flag.StringVar(&command, "c", "", "Execute command")
+	flag.Var(&commands, "c", "Execute command (can be specified multiple times)")
 	flag.Var(&filePaths, "f", "Execute SQL from file (can be specified multiple times)")
 	flag.BoolVar(&quit, "q", false, "Quit after executing commands (don't start server)")
 	flag.BoolVar(&help, "h", false, "Show help")
@@ -47,7 +59,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  vsql [options]\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -port PORT    Port to listen on (default: 5432)\n")
-		fmt.Fprintf(os.Stderr, "  -c COMMAND    Execute command (runs after -f if both are specified)\n")
+		fmt.Fprintf(os.Stderr, "  -c COMMAND    Execute command (can be specified multiple times)\n")
 		fmt.Fprintf(os.Stderr, "  -f FILE       Execute SQL from file (can be specified multiple times)\n")
 		fmt.Fprintf(os.Stderr, "  -q            Quit after executing commands (don't start server)\n")
 		fmt.Fprintf(os.Stderr, "  -h, -help     Show this help message\n\n")
@@ -65,7 +77,9 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  # Execute SQL from file as seed data then start server\n")
 		fmt.Fprintf(os.Stderr, "  vsql -f seed.sql\n\n")
 		fmt.Fprintf(os.Stderr, "  # Execute multiple SQL files in order\n")
-		fmt.Fprintf(os.Stderr, "  vsql -f schema.sql -f data.sql -f indexes.sql -q\n")
+		fmt.Fprintf(os.Stderr, "  vsql -f schema.sql -f data.sql -f indexes.sql -q\n\n")
+		fmt.Fprintf(os.Stderr, "  # Execute multiple commands\n")
+		fmt.Fprintf(os.Stderr, "  vsql -c \"CREATE TABLE t1 (id int)\" -c \"CREATE TABLE t2 (id int)\" -q\n")
 		os.Exit(0)
 	}
 
@@ -82,8 +96,8 @@ func main() {
 		executeCommand(string(content), store, metaStore)
 	}
 
-	// Execute command if provided (second)
-	if command != "" {
+	// Execute commands if provided (second)
+	for _, command := range commands {
 		executeCommand(command, store, metaStore)
 	}
 

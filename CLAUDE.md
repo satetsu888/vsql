@@ -37,6 +37,9 @@ go build -o vsql
 # Execute multiple SQL files in order
 ./vsql -f schema.sql -f data.sql -f indexes.sql -q
 
+# Execute multiple commands
+./vsql -c "CREATE TABLE users (id int)" -c "INSERT INTO users VALUES (1)" -q
+
 # Show help
 ./vsql -h
 ```
@@ -98,7 +101,8 @@ go vet ./...
    - `-q` flag: quit after executing commands (test mode)
    - Without `-q`: executes commands then starts server (seed data mode)
    - `-f` flag: can be specified multiple times to execute multiple files in order
-   - When both `-f` and `-c` are specified, all `-f` files execute first, then `-c`
+   - `-c` flag: can be specified multiple times to execute multiple commands in order
+   - When both `-f` and `-c` are specified, all `-f` files execute first, then all `-c` commands
    - Supports executing multiple SQL statements separated by semicolons
    - Intelligent SQL statement splitter that respects comments and string literals
 
