@@ -14,16 +14,28 @@ import (
 	"vsql/storage"
 )
 
+// fileList is a custom flag type for accepting multiple file paths
+type fileList []string
+
+func (f *fileList) String() string {
+	return strings.Join(*f, ",")
+}
+
+func (f *fileList) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
 func main() {
 	var port int
 	var command string
-	var filePath string
+	var filePaths fileList
 	var quit bool
 	var help bool
 	
 	flag.IntVar(&port, "port", 5432, "Port to listen on")
 	flag.StringVar(&command, "c", "", "Execute command")
-	flag.StringVar(&filePath, "f", "", "Execute SQL from file")
+	flag.Var(&filePaths, "f", "Execute SQL from file (can be specified multiple times)")
 	flag.BoolVar(&quit, "q", false, "Quit after executing commands (don't start server)")
 	flag.BoolVar(&help, "h", false, "Show help")
 	flag.BoolVar(&help, "help", false, "Show help")
@@ -36,7 +48,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -port PORT    Port to listen on (default: 5432)\n")
 		fmt.Fprintf(os.Stderr, "  -c COMMAND    Execute command (runs after -f if both are specified)\n")
-		fmt.Fprintf(os.Stderr, "  -f FILE       Execute SQL from file (runs before -c if both are specified)\n")
+		fmt.Fprintf(os.Stderr, "  -f FILE       Execute SQL from file (can be specified multiple times)\n")
 		fmt.Fprintf(os.Stderr, "  -q            Quit after executing commands (don't start server)\n")
 		fmt.Fprintf(os.Stderr, "  -h, -help     Show this help message\n\n")
 		fmt.Fprintf(os.Stderr, "Examples:\n")
@@ -51,15 +63,17 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  # Execute SQL from file and exit\n")
 		fmt.Fprintf(os.Stderr, "  vsql -f queries.sql -q\n\n")
 		fmt.Fprintf(os.Stderr, "  # Execute SQL from file as seed data then start server\n")
-		fmt.Fprintf(os.Stderr, "  vsql -f seed.sql\n")
+		fmt.Fprintf(os.Stderr, "  vsql -f seed.sql\n\n")
+		fmt.Fprintf(os.Stderr, "  # Execute multiple SQL files in order\n")
+		fmt.Fprintf(os.Stderr, "  vsql -f schema.sql -f data.sql -f indexes.sql -q\n")
 		os.Exit(0)
 	}
 
 	store := storage.NewDataStore()
 	metaStore := storage.NewMetaStore()
 
-	// Execute file if provided (first)
-	if filePath != "" {
+	// Execute files if provided (first)
+	for _, filePath := range filePaths {
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error reading file %s: %v\n", filePath, err)
