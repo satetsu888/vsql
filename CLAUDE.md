@@ -145,6 +145,7 @@ go vet ./...
 - **In-memory Only**: No persistence, all data lost on restart
 - **Thread-safe**: All storage operations protected by RWMutex
 - **Column Ordering**: Maintains consistent column order from CREATE TABLE statements, with additional columns appended as needed
+- **Graceful Handling of Non-existent Tables**: Queries on non-existent tables return empty results rather than errors, allowing for more flexible application development
 
 ## Supported SQL Features
 
@@ -194,6 +195,11 @@ go vet ./...
   - Boolean literals (true/false) work correctly
   - WHERE clause with boolean columns works as expected
   - NOT operator on boolean values is supported
+- Non-existent table handling:
+  - SELECT from non-existent tables returns empty result set (0 rows)
+  - UPDATE on non-existent tables returns "UPDATE 0" 
+  - DELETE from non-existent tables returns "DELETE 0"
+  - JOINs with non-existent tables return appropriate empty results
 
 ### Partially Implemented
 - UNION/UNION ALL: Basic structure exists but not fully tested
@@ -276,10 +282,10 @@ SELECT * FROM users WHERE id < 3;
 DROP TABLE users;
 ```
 
-#### Expected Error Example
+#### Empty Result Example
 ```sql
--- Test: SELECT from non-existent table
--- Expected: error
+-- Test: SELECT from non-existent table returns empty result
+-- Expected: 0 rows
 
 SELECT * FROM non_existent_table;
 ```
