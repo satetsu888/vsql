@@ -26,7 +26,7 @@ WHERE p.price > 100
 AND EXISTS (
   SELECT 1 FROM orders o 
   WHERE o.product_id = p.id 
-  AND o.quantity * p.price > 500
+  AND o.quantity * p.price >= 300
 )
 ORDER BY name;
 
