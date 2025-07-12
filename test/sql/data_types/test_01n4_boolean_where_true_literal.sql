@@ -1,8 +1,6 @@
 -- Test: Boolean literal true in WHERE
 -- Expected: 6 rows  
--- Status: FAILING
 -- Standard SQL: WHERE true should return all 6 rows
--- May not work correctly
 
 CREATE TABLE bool_std (id int, active boolean, verified boolean);
 INSERT INTO bool_std VALUES 
