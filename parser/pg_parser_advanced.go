@@ -1079,6 +1079,15 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 				}
 				return result, colName
 			}
+		case *pg_query.Node_CoalesceExpr:
+			// Handle COALESCE expression
+			for _, arg := range val.CoalesceExpr.Args {
+				result := evaluateExpression(arg, currentRow, ctx)
+				if result != nil {
+					return result, colName
+				}
+			}
+			return nil, colName
 		case *pg_query.Node_ColumnRef:
 			// Handle column reference with potential table alias
 			var columnName string
