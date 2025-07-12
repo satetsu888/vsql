@@ -1,6 +1,6 @@
 module vsql
 
-go 1.20
+go 1.24
 
 require github.com/pganalyze/pg_query_go/v5 v5.1.0
 

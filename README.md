@@ -1,6 +1,6 @@
 # VSQL - PostgreSQL-Compatible In-Memory Database
 
-[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Docker Pulls](https://img.shields.io/docker/pulls/satetsu888/vsql.svg)](https://hub.docker.com/r/satetsu888/vsql)
 
