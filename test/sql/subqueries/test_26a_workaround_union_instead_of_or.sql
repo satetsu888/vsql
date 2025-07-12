@@ -3,6 +3,7 @@
 -- SELECT name FROM users u WHERE EXISTS (SELECT 1 FROM posts p WHERE p.user_id = u.id OR u.active = 1)
 -- Workaround (works):
 -- Expected: 5 rows (all active users + users with posts)
+-- Status: FAILING - Returns 4 rows instead of 5
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);

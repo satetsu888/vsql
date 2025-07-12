@@ -1,5 +1,6 @@
 -- Test: Pattern with _ (single character)
 -- Expected: 3 rows (2,6,7)
+-- Status: FAILING - Returns 4 rows instead of 3
 
 -- Setup
 CREATE TABLE pattern_test (id INTEGER, text_val TEXT);

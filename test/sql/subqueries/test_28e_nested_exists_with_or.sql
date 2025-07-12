@@ -1,5 +1,6 @@
 -- Test: Nested EXISTS with OR referencing outer table
 -- Expected: 2 rows (users with valuable activities or high scores)
+-- Status: FAILING - Returns 1 row instead of 2
 
 -- Setup with working data types
 CREATE TABLE users (id int, name text, status text, score int);

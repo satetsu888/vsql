@@ -1,7 +1,7 @@
 -- Test 6: NOT EXISTS subquery
 -- Expected: 2 rows
--- Testing NOT EXISTS with correlated subquery
--- Status: May fail - correlated subqueries not fully supported
+-- Status: FAILING - Returns 1 row instead of 2 rows
+-- Testing NOT EXISTS with correlated subquery - correlated subqueries not fully supported
 
 -- Setup
 CREATE TABLE orders (id int, user_id int, product_id int, quantity int, price decimal, created_at timestamp);

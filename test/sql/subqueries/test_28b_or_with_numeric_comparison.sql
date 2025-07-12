@@ -1,5 +1,6 @@
 -- Test: OR with outer table numeric comparison
 -- Expected: 3 rows (users with high scores or activities)
+-- Status: FAILING - Returns 2 rows instead of 3
 -- Returns: Alice (activity), Charlie (high score + activity), David (high score)
 
 -- Setup with working data types

@@ -1,7 +1,7 @@
 -- Test 15: ALL/ANY subqueries
 -- Expected: error
--- Testing ALL and ANY operators with subqueries
--- Status: May fail - ALL/ANY operators not implemented
+-- Status: FAILING - Query succeeds instead of returning error
+-- Testing ALL and ANY operators with subqueries - ALL/ANY operators not implemented
 
 -- Setup
 CREATE TABLE products (id int, name text, category text, price decimal, stock int);

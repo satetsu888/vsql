@@ -1,7 +1,6 @@
 -- Test: EXISTS with OR conditions in correlation
--- Status: PARTIALLY WORKING - Returns only products with orders, ignores OR condition
 -- Expected: 4 rows (all Electronics and products with orders: Laptop, Mouse, Desk, Chair)
--- Actual: 3 rows (only products with orders: Laptop, Mouse, Desk)
+-- Status: FAILING - Returns only 3 rows (products with orders), ignores OR condition
 
 -- Setup
 CREATE TABLE products (id int, name text, category text, price int);

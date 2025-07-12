@@ -1,5 +1,6 @@
 -- Test 2: COUNT DISTINCT function
 -- Expected: 2 rows
+-- Status: FAILING - Expected 2 rows but returns 1 row
 -- Test: Verifies COUNT DISTINCT works correctly with single table and JOINs
 
 -- Setup

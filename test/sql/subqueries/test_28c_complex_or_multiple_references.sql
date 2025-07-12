@@ -1,5 +1,6 @@
 -- Test: Complex OR with multiple outer references
 -- Expected: 4 rows (active users OR high scores OR activities)
+-- Status: FAILING - Returns 3 rows instead of 4
 
 -- Setup with working data types
 CREATE TABLE users (id int, name text, status text, score int);

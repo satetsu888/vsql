@@ -1,5 +1,5 @@
 -- Test 6: Empty table creation
--- Expected: 0 rows
+-- Expected: success
 
 -- Setup
 CREATE TABLE empty_table (id int, value text);
