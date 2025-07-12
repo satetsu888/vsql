@@ -39,11 +39,15 @@ func extractAConstValue(aConst *pg_query.A_Const) interface{} {
 
 	switch val := aConst.Val.(type) {
 	case *pg_query.A_Const_Sval:
-		return val.Sval.Sval
+		if val.Sval != nil {
+			return val.Sval.Sval
+		}
 	case *pg_query.A_Const_Ival:
 		return int(val.Ival.Ival)
 	case *pg_query.A_Const_Fval:
-		return val.Fval.Fval
+		if val.Fval != nil {
+			return val.Fval.Fval
+		}
 	case *pg_query.A_Const_Boolval:
 		return val.Boolval.Boolval
 	}

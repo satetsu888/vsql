@@ -116,12 +116,20 @@ func needsAdvancedProcessing(stmt *pg_query.SelectStmt) bool {
 	
 	// Check for aggregate functions in target list
 	for _, target := range stmt.TargetList {
-		if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
+		if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok && resTarget.ResTarget.Val != nil {
 			if funcCall, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_FuncCall); ok && funcCall.FuncCall != nil {
 				return true
 			}
 			// Check for subquery in SELECT
 			if _, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_SubLink); ok {
+				return true
+			}
+			// Check for constants (string literals, numbers)
+			if _, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_AConst); ok {
+				return true
+			}
+			// Check for expressions (arithmetic, string concatenation)
+			if _, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_AExpr); ok {
 				return true
 			}
 		}
