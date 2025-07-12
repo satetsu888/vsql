@@ -589,7 +589,24 @@ func evaluateBoolExpr(row storage.Row, expr *pg_query.BoolExpr) bool {
 		return false
 	case pg_query.BoolExprType_NOT_EXPR:
 		if len(expr.Args) > 0 {
-			return !evaluatePgWhere(row, expr.Args[0])
+			// Special handling for NOT with NULL values
+			arg := expr.Args[0]
+			
+			// Check if the argument is a column reference
+			if _, ok := arg.Node.(*pg_query.Node_ColumnRef); ok {
+				val := extractValueFromExpr(row, arg)
+				if val == nil {
+					// NOT NULL = NULL (unknown), which is treated as false in WHERE
+					return false
+				}
+				// For boolean values, apply NOT
+				if boolVal, ok := val.(bool); ok {
+					return !boolVal
+				}
+			}
+			
+			// Default behavior for other cases
+			return !evaluatePgWhere(row, arg)
 		}
 		return true
 	}
