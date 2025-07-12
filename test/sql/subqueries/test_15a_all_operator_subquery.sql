@@ -1,7 +1,7 @@
--- Test 15: ALL/ANY subqueries
--- Expected: error
--- Status: FAILING - Query succeeds instead of returning error
--- Testing ALL and ANY operators with subqueries - ALL/ANY operators not implemented
+-- Test: ALL operator with subquery
+-- Expected: 3 rows (Laptop, iPhone, Android Phone - products with price > 75.00)
+-- Status: FAILING - ALL operator not implemented
+-- Testing ALL operator with subqueries
 
 -- Setup
 CREATE TABLE products (id int, name text, category text, price decimal, stock int);
@@ -13,16 +13,10 @@ INSERT INTO products VALUES
   (4, 'iPhone', 'Phones', 999.00, 100),
   (5, 'Android Phone', 'Phones', 799.00, 80);
 
--- Test Query 1: ALL operator
+-- Test Query: ALL operator
 SELECT * FROM products
 WHERE price > ALL (
   SELECT price FROM products WHERE category = 'Accessories'
-);
-
--- Test Query 2: ANY operator
-SELECT * FROM products
-WHERE price > ANY (
-  SELECT price FROM products WHERE category = 'Phones'
 );
 
 -- Cleanup
