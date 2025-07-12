@@ -1,5 +1,5 @@
--- Test: UPPER and LOWER functions
--- Expected: 3 rows with text transformed
+-- Test: UPPER function
+-- Expected: 3 rows with text transformed to uppercase
 
 CREATE TABLE test_text (id int, name text);
 INSERT INTO test_text VALUES (1, 'Alice'), (2, 'bob'), (3, 'ChArLiE');
