@@ -1,8 +1,6 @@
 -- Test: OR with function on outer table column
 -- Expected: Should return users with posts OR users with name starting with 'B'
--- Actual: Only returns users with posts
 -- Expected: 4 rows
--- Status: FAILING
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);

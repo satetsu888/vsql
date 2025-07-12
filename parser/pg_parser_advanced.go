@@ -38,8 +38,11 @@ func hasAggregateFunctions(targetList []*pg_query.Node) bool {
 	for _, target := range targetList {
 		if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
 			if resTarget.ResTarget.Val != nil {
-				if _, isFuncCall := resTarget.ResTarget.Val.Node.(*pg_query.Node_FuncCall); isFuncCall {
-					return true
+				if funcCall, isFuncCall := resTarget.ResTarget.Val.Node.(*pg_query.Node_FuncCall); isFuncCall {
+					funcName := getFunctionName(funcCall.FuncCall)
+					if isAggregateFunction(funcName) {
+						return true
+					}
 				}
 			}
 		}
@@ -1177,6 +1180,28 @@ func evaluateScalarFunction(funcCall *pg_query.FuncCall, row storage.Row, ctx *Q
 			val := evaluateExpression(arg, row, ctx)
 			if val != nil {
 				return val
+			}
+		}
+		return nil
+	case "UPPER":
+		// UPPER converts string to uppercase
+		if len(funcCall.Args) > 0 {
+			val := evaluateExpression(funcCall.Args[0], row, ctx)
+			if val != nil {
+				if str, ok := val.(string); ok {
+					return strings.ToUpper(str)
+				}
+			}
+		}
+		return nil
+	case "LOWER":
+		// LOWER converts string to lowercase
+		if len(funcCall.Args) > 0 {
+			val := evaluateExpression(funcCall.Args[0], row, ctx)
+			if val != nil {
+				if str, ok := val.(string); ok {
+					return strings.ToLower(str)
+				}
 			}
 		}
 		return nil
