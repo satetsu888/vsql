@@ -186,12 +186,14 @@ func processFromNode(ctx *QueryContext, node *pg_query.Node) ([]storage.Row, err
 			aliasName = n.RangeVar.Alias.Aliasname
 		}
 
+		var rows []storage.Row
 		table, exists := ctx.dataStore.GetTable(realTableName)
-		if !exists {
-			return nil, fmt.Errorf("table '%s' does not exist", realTableName)
+		if exists {
+			rows = table.GetRows()
+		} else {
+			// Table doesn't exist - return empty row set
+			rows = []storage.Row{}
 		}
-
-		rows := table.GetRows()
 		
 		// Store table context with both real name and alias
 		ctx.tables[aliasName] = &TableContext{

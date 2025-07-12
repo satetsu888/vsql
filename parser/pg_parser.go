@@ -58,12 +58,15 @@ func executePgSelect(stmt *pg_query.SelectStmt, dataStore *storage.DataStore, me
 		return nil, nil, "", fmt.Errorf("could not extract table name")
 	}
 
+	var rows []storage.Row
 	table, exists := dataStore.GetTable(tableName)
-	if !exists {
-		return nil, nil, "", fmt.Errorf("table '%s' does not exist", tableName)
+	if exists {
+		rows = table.GetRows()
+	} else {
+		// Table doesn't exist - return empty result set
+		rows = []storage.Row{}
 	}
-
-	rows := table.GetRows()
+	
 	columns := extractSelectColumns(stmt, tableName, metaStore, rows)
 
 	var resultRows [][]interface{}
@@ -242,7 +245,8 @@ func executePgUpdate(stmt *pg_query.UpdateStmt, dataStore *storage.DataStore, me
 
 	table, exists := dataStore.GetTable(tableName)
 	if !exists {
-		return nil, nil, "", fmt.Errorf("table '%s' does not exist", tableName)
+		// Table doesn't exist - return 0 updated rows
+		return nil, nil, "UPDATE 0", nil
 	}
 
 	rows := table.GetRows()
@@ -283,7 +287,8 @@ func executePgDelete(stmt *pg_query.DeleteStmt, dataStore *storage.DataStore) ([
 
 	table, exists := dataStore.GetTable(tableName)
 	if !exists {
-		return nil, nil, "", fmt.Errorf("table '%s' does not exist", tableName)
+		// Table doesn't exist - return 0 deleted rows
+		return nil, nil, "DELETE 0", nil
 	}
 
 	rows := table.GetRows()
