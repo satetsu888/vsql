@@ -1,8 +1,6 @@
 -- Test: Boolean AND without explicit comparison
 -- Expected: 1 row
--- Status: FAILING
--- Standard SQL: WHERE active AND verified should return only id=1
--- Likely will fail
+-- PostgreSQL: WHERE active AND verified should return only id=1
 
 CREATE TABLE bool_std (id int, active boolean, verified boolean);
 INSERT INTO bool_std VALUES 

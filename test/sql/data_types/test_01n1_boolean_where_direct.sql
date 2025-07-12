@@ -1,8 +1,6 @@
 -- Test: Boolean column in WHERE without comparison
 -- Expected: 3 rows
--- Status: FAILING  
--- Standard SQL: WHERE active should return only rows where active=true (ids: 1,2,6)
--- Currently returns all rows
+-- PostgreSQL: WHERE active should return only rows where active=true (ids: 1,2,6)
 
 CREATE TABLE bool_std (id int, active boolean, verified boolean);
 INSERT INTO bool_std VALUES 
