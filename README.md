@@ -1,123 +1,205 @@
-# VSQL - PostgreSQL互換スキーマレスデータベース
+# VSQL - PostgreSQL-Compatible In-Memory Database
 
-VSQLは、PostgreSQL互換のプロトコルを持つスキーマレスのインメモリデータベースです。PostgreSQLの公式パーサー（pg_query_go）を使用しているため、完全なPostgreSQL構文をサポートします。
+[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Docker Pulls](https://img.shields.io/docker/pulls/satetsu888/vsql.svg)](https://hub.docker.com/r/satetsu888/vsql)
 
-## 特徴
+VSQL is a lightweight, PostgreSQL wire protocol compatible, schema-less, in-memory database written in Go. It provides full SQL syntax support through PostgreSQL's official parser while maintaining NoSQL-like flexibility.
 
-- PostgreSQLワイヤープロトコル互換（psqlから接続可能）
-- PostgreSQL公式パーサー使用による完全な構文サポート
-- スキーマレス（カラムの自由な追加、存在しないカラムはNULL扱い）
-- インメモリストレージ
-- 複雑なWHERE句のサポート（AND、OR、NOT）
+## ✨ Features
 
-## コマンドラインオプション
+- 🚀 **PostgreSQL Wire Protocol Compatible** - Connect with any PostgreSQL client (`psql`, pgAdmin, etc.)
+- 🔄 **Schema-less Design** - Add columns on-the-fly, perfect for rapid prototyping
+- ⚡ **In-Memory Storage** - Lightning-fast operations with no disk I/O
+- 🔍 **Full SQL Support** - JOINs, subqueries, aggregations, CTEs (coming soon)
+- 🐳 **Docker Ready** - Pre-built images with automatic seed data loading
+- 🛡️ **Type Safety** - Automatic type inference with validation
+- 📦 **Zero Dependencies** - Single binary deployment
 
-- `-port PORT`: サーバーのリスニングポート（デフォルト: 5432）
-- `-c COMMAND`: コマンドを実行して終了（サーバーを起動せずにSQLを実行）
-- `-h`, `-help`: ヘルプメッセージを表示
+## 🚀 Quick Start
 
-## ビルドと実行
+### Using Docker (Recommended)
 
 ```bash
-# ビルド
-go build -o vsql
+# Run VSQL server
+docker run -d -p 5432:5432 satetsu888/vsql:latest
 
-# 実行（デフォルトはポート5432）
+# Connect with psql
+psql -h localhost -p 5432 -U any_user -d any_database
+```
+
+### Using Pre-built Binaries
+
+Download the latest release from [GitHub Releases](https://github.com/satetsu888/vsql/releases).
+
+```bash
+# Run server
 ./vsql
 
-# ポート指定
-./vsql -port 5433
-
-# コマンドを実行して終了
-./vsql -c "SELECT * FROM users;"
-
-# 複数のコマンドを実行
-./vsql -c "CREATE TABLE users (id int, name text); INSERT INTO users VALUES (1, 'Alice');"
-
-# ヘルプの表示
-./vsql -h
-./vsql -help
+# Execute query directly
+./vsql -c "SELECT 'Hello, VSQL!' as greeting" -q
 ```
 
-## 使用例
-
-```sql
--- psqlから接続
-psql -h localhost -p 5432 -U any_user -d any_database
-
--- テーブル作成（PostgreSQL構文でカラム定義が必要）
-CREATE TABLE users (id int, name text, email text);
-
--- データ挿入（スキーマレスなので新しいカラムも追加可能）
-INSERT INTO users (id, name, email) VALUES (1, 'Alice', 'alice@example.com');
-INSERT INTO users (id, name, age) VALUES (2, 'Bob', 30);
-
--- 検索
-SELECT * FROM users;
-SELECT name, email FROM users WHERE id = 1;
-SELECT * FROM users WHERE age > 25;
-
--- 更新
-UPDATE users SET email = 'bob@example.com' WHERE name = 'Bob';
-
--- 削除
-DELETE FROM users WHERE id = 1;
-
--- 複雑な条件
-SELECT * FROM users WHERE age >= 30 AND name = 'Bob';
-```
-
-## 実装済み機能
-
-### 基本的なSQL操作
-- CREATE TABLE（PostgreSQL構文）
-- INSERT INTO
-- SELECT（*、特定カラム）
-- UPDATE
-- DELETE  
-- DROP TABLE
-
-### 高度な機能
-- **JOIN**: INNER JOIN、LEFT JOIN、RIGHT JOIN、FULL OUTER JOIN
-- **サブクエリ**: SELECT内、FROM句、WHERE句（EXISTS、IN、ALL、ANY）
-- **集約関数**: COUNT、SUM、AVG、MAX、MIN
-- **GROUP BY / HAVING**: グループ化と集約条件
-- **ORDER BY**: ソート機能
-- **LIMIT / OFFSET**: 結果の制限とページング
-- **WHERE句**: 複雑な条件（=, !=, <>, >, <, >=, <=、AND、OR、NOT）
-
-## 技術的特徴
-
-- `github.com/pganalyze/pg_query_go/v5`を使用した本格的なSQL解析
-- PostgreSQLの実際のパーサーを使用しているため、将来的な拡張が容易
-- スキーマレス設計により、NoSQLのような柔軟性とSQLの表現力を両立
-
-## テスト
+### Building from Source
 
 ```bash
-# ユニットテストの実行
-go test ./...
+# Clone repository
+git clone https://github.com/satetsu888/vsql.git
+cd vsql
 
-# レースディテクタ付きテスト
-go test ./... -race
+# Build
+go build -o vsql
 
-# カバレッジ付きテスト
-go test ./... -cover
-
-# 統合テストの実行
-./test_vsql_enhanced.sh
+# Run
+./vsql
 ```
 
-## 既知の制限事項
+## 📖 Usage
 
-- サブクエリの一部（IN句、EXISTS句）で結果フィールドカウントのエラーが発生する場合があります
-- トランザクションは未サポートです
-- `SELECT 1`のようなテーブルを指定しないクエリは未サポートです
+### Command Line Options
 
-## 今後の拡張可能性
+```bash
+vsql [options]
 
-- 永続化機能
-- インデックス
-- トランザクション
-- より高度なクエリ最適化
-- サブクエリの完全サポート
+Options:
+  -port PORT    Port to listen on (default: 5432)
+  -c COMMAND    Execute command (can be specified multiple times)
+  -f FILE       Execute SQL from file (can be specified multiple times)
+  -q            Quit after executing commands (don't start server)
+  -h, -help     Show help message
+```
+
+### Basic Examples
+
+```sql
+-- Create table (schema-less, columns are optional)
+CREATE TABLE users (id int, name text);
+
+-- Insert data (can add new columns on the fly!)
+INSERT INTO users (id, name, email) VALUES (1, 'Alice', 'alice@example.com');
+INSERT INTO users (id, name) VALUES (2, 'Bob');
+
+-- Query data
+SELECT * FROM users WHERE id = 1;
+
+-- Complex queries with JOINs
+SELECT u.name, COUNT(p.id) as post_count
+FROM users u
+LEFT JOIN posts p ON u.id = p.user_id
+GROUP BY u.name
+HAVING COUNT(p.id) > 0;
+```
+
+### Docker Usage
+
+#### With Seed Data
+```bash
+# Mount directory with .sql files
+docker run -d -p 5432:5432 \
+  -v ./seed-data:/seed:ro \
+  satetsu888/vsql:latest
+```
+
+#### Multiple Commands
+```bash
+docker run satetsu888/vsql:latest \
+  -c "CREATE TABLE users (id int, name text)" \
+  -c "INSERT INTO users (id, name) VALUES (1, 'Alice')" \
+  -c "SELECT * FROM users" \
+  -q
+```
+
+#### Docker Compose
+```yaml
+version: '3.8'
+services:
+  vsql:
+    image: satetsu888/vsql:latest
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./init-scripts:/seed:ro
+    environment:
+      - SEED_DIR=/seed
+```
+
+## 🔧 Supported SQL Features
+
+### ✅ Fully Implemented
+
+- **Basic Operations**: CREATE TABLE, INSERT, SELECT, UPDATE, DELETE, DROP TABLE
+- **Schema-less Tables**: Dynamic column addition
+- **Complex WHERE**: AND, OR, NOT, IN, EXISTS, BETWEEN, LIKE
+- **JOINs**: INNER, LEFT, RIGHT, FULL OUTER, CROSS
+- **Aggregations**: COUNT, SUM, AVG, MAX, MIN, COUNT(DISTINCT)
+- **Grouping**: GROUP BY, HAVING, DISTINCT
+- **Subqueries**: IN, EXISTS, scalar subqueries in SELECT/WHERE
+- **Ordering**: ORDER BY, LIMIT, OFFSET
+- **NULL Handling**: Three-valued logic, IS NULL/IS NOT NULL
+- **Type System**: Automatic inference with Integer, Float, String, Boolean
+- **Table Aliases**: Support for qualified column references
+
+### 🚧 Coming Soon
+
+- UNION/UNION ALL
+- Window Functions
+- CTEs (WITH clause)
+- Transactions
+- Indexes for performance
+
+### ❌ Not Planned
+
+- Persistence (this is an in-memory database)
+- Replication
+- User authentication (accepts any username/password)
+
+## 🏗️ Architecture
+
+VSQL consists of several key components:
+
+1. **Parser**: Uses PostgreSQL's official parser (`pg_query_go`) for 100% syntax compatibility
+2. **Executor**: Processes the parsed AST and executes queries against in-memory storage
+3. **Storage**: Thread-safe, schema-less in-memory storage using Go's `sync.RWMutex`
+4. **Protocol**: PostgreSQL wire protocol implementation for client compatibility
+5. **Type System**: Dynamic type inference with safety validations
+
+## 🧪 Testing
+
+```bash
+# Run all tests
+go test -v
+
+# Run specific test category
+go test -v -run TestIndividualSQLFiles/crud
+
+# Run with coverage
+go test -v -cover
+```
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [pg_query_go](https://github.com/pganalyze/pg_query_go) - PostgreSQL parser
+- PostgreSQL community for the wire protocol documentation
+
+## 📧 Contact
+
+- GitHub: [@satetsu888](https://github.com/satetsu888)
+- Docker Hub: [satetsu888/vsql](https://hub.docker.com/r/satetsu888/vsql)
+
+---
+
+Made with ❤️ by satetsu888

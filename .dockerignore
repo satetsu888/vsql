@@ -1,0 +1,39 @@
+# Git files
+.git
+.gitignore
+
+# Go build artifacts
+vsql
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+test/
+
+# Temporary files
+tmp/
+*.tmp
+*.log
+
+# Documentation
+*.md
+LICENSE
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

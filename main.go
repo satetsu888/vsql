@@ -71,7 +71,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "  # Execute query and exit\n")
 		fmt.Fprintf(os.Stderr, "  vsql -c \"SELECT * FROM users;\" -q\n\n")
 		fmt.Fprintf(os.Stderr, "  # Execute queries then start server (seed data)\n")
-		fmt.Fprintf(os.Stderr, "  vsql -c \"CREATE TABLE users (id int, name text); INSERT INTO users VALUES (1, 'Alice');\"\n\n")
+		fmt.Fprintf(os.Stderr, "  vsql -c \"CREATE TABLE users (id int, name text); INSERT INTO users (id, name) VALUES (1, 'Alice');\"\n\n")
 		fmt.Fprintf(os.Stderr, "  # Execute SQL from file and exit\n")
 		fmt.Fprintf(os.Stderr, "  vsql -f queries.sql -q\n\n")
 		fmt.Fprintf(os.Stderr, "  # Execute SQL from file as seed data then start server\n")

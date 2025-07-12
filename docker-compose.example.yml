@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # Basic VSQL server
+  vsql:
+    image: satetsu888/vsql:latest
+    ports:
+      - "5432:5432"
+    
+  # VSQL with seed files from host
+  vsql-with-seeds:
+    image: satetsu888/vsql:latest
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./sql-seeds:/seed:ro
+    environment:
+      - SEED_DIR=/seed
+  
+  # VSQL with custom command
+  vsql-custom:
+    image: satetsu888/vsql:latest
+    ports:
+      - "5434:5432"
+    command: ["-c", "CREATE TABLE users (id int, name text); INSERT INTO users (id, name) VALUES (1, 'Admin');"]
+  
+  # VSQL for one-time execution (with -q flag)
+  vsql-oneshot:
+    image: satetsu888/vsql:latest
+    volumes:
+      - ./migrations:/seed:ro
+    command: ["-q"]
+    
+  # VSQL with both seed files and custom commands
+  vsql-full:
+    image: satetsu888/vsql:latest
+    ports:
+      - "5435:5432"
+    volumes:
+      - ./schema:/seed:ro
+    command: ["-c", "INSERT INTO users (id, name) VALUES (2, 'User2')", "-c", "SELECT COUNT(*) FROM users"]
+
+  # Development setup with source code mounted
+  vsql-dev:
+    build: .
+    ports:
+      - "5436:5432"
+    volumes:
+      - ./test/sql/crud:/seed:ro
+    environment:
+      - SEED_DIR=/seed
+    command: ["-port", "5432"]

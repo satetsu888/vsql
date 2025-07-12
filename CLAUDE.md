@@ -23,7 +23,7 @@ go build -o vsql
 ./vsql -c "SELECT * FROM users;" -q
 
 # Execute query then start server (seed data)
-./vsql -c "CREATE TABLE users (id int, name text); INSERT INTO users VALUES (1, 'Alice');"
+./vsql -c "CREATE TABLE users (id int, name text); INSERT INTO users (id, name) VALUES (1, 'Alice');"
 
 # Execute SQL from file and exit
 ./vsql -f queries.sql -q
@@ -32,13 +32,13 @@ go build -o vsql
 ./vsql -f seed.sql
 
 # Execute both file and command (file runs first)
-./vsql -f schema.sql -c "INSERT INTO users VALUES (1, 'Alice');" -q
+./vsql -f schema.sql -c "INSERT INTO users (id, name) VALUES (1, 'Alice');" -q
 
 # Execute multiple SQL files in order
 ./vsql -f schema.sql -f data.sql -f indexes.sql -q
 
 # Execute multiple commands
-./vsql -c "CREATE TABLE users (id int)" -c "INSERT INTO users VALUES (1)" -q
+./vsql -c "CREATE TABLE users (id int)" -c "INSERT INTO users (id) VALUES (1)" -q
 
 # Show help
 ./vsql -h
@@ -89,6 +89,84 @@ go fmt ./...
 
 # Run go vet
 go vet ./...
+```
+
+### Docker
+
+VSQL is available as a Docker image, making it easy to deploy and use in containerized environments.
+
+#### Building the Docker Image
+```bash
+# Build the image
+docker build -t satetsu888/vsql:latest .
+
+# Build with a specific tag
+docker build -t satetsu888/vsql:1.0.0 .
+```
+
+#### Running VSQL in Docker
+
+##### Basic Server Mode
+```bash
+# Run VSQL server on default port
+docker run -d -p 5432:5432 satetsu888/vsql:latest
+
+# Run on custom port
+docker run -d -p 5433:5432 satetsu888/vsql:latest
+```
+
+##### With Seed Data Directory
+The Docker image automatically loads all `.sql` files from the `/seed` directory on startup:
+
+```bash
+# Mount local directory with SQL files as seed data
+docker run -d -p 5432:5432 -v ./my-sql-files:/seed:ro satetsu888/vsql:latest
+
+# The container will execute all *.sql files in alphabetical order
+```
+
+##### One-time Execution Mode
+```bash
+# Execute commands and exit
+docker run satetsu888/vsql:latest -c "SELECT 1" -q
+
+# Execute seed files and exit
+docker run -v ./migrations:/seed:ro satetsu888/vsql:latest -q
+```
+
+##### Custom Commands
+```bash
+# Run with custom commands (files execute first, then commands)
+docker run -d -p 5432:5432 \
+  -v ./schema:/seed:ro \
+  satetsu888/vsql:latest \
+  -c "INSERT INTO users (id, name) VALUES (999, 'Docker User')"
+```
+
+#### Docker Compose Examples
+See `docker-compose.example.yml` for various configuration examples:
+
+```yaml
+# Basic server
+services:
+  vsql:
+    image: satetsu888/vsql:latest
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./sql-seeds:/seed:ro
+```
+
+#### Environment Variables
+- `SEED_DIR`: Directory containing seed SQL files (default: `/seed`)
+
+#### DockerHub
+```bash
+# Pull from DockerHub
+docker pull satetsu888/vsql:latest
+
+# Run the pulled image
+docker run -d -p 5432:5432 satetsu888/vsql:latest
 ```
 
 ## Architecture
