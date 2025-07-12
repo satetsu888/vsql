@@ -117,8 +117,10 @@ go vet ./...
 
 4. **Storage Module** (`storage/`)
    - `datastore.go`: In-memory table and row storage using `sync.RWMutex` for thread safety
-   - `metastore.go`: Metadata storage for table schemas and column ordering
+   - `metastore.go`: Metadata storage for table schemas, column ordering, and type information
+   - `types.go`: Type system definitions (Integer, Float, String, Boolean) and type inference
    - Schema-less design: rows are `map[string]interface{}`, non-existent columns return NULL
+   - Type safety: Automatic type inference with validation to prevent incompatible type changes
 
 5. **Test Module** (`individual_sql_test.go`)
    - Automated test runner using `-c` option for direct query execution
@@ -149,6 +151,12 @@ go vet ./...
 ### Fully Implemented
 - Basic operations: CREATE TABLE, INSERT, SELECT, UPDATE, DELETE, DROP TABLE
 - Schema-less table design (can insert new columns at any time)
+- Type inference and validation system:
+  - Automatic type inference from INSERT values
+  - Type safety: prevents incompatible type changes
+  - Supports: Integer, Float, String, Boolean types
+  - Integer to Float promotion is allowed
+  - NULL values don't affect type determination
 - Complex WHERE clauses with AND, OR, NOT
 - NULL handling with SQL three-valued logic
 - IS NULL / IS NOT NULL operators (including in SELECT and WHERE clauses)
@@ -182,12 +190,14 @@ go vet ./...
 - Numeric comparisons with proper type handling (not string comparison)
 - String functions: UPPER, LOWER
 - COALESCE function (returns first non-NULL argument)
+- Boolean type: Now fully implemented with PostgreSQL-compatible behavior
+  - Boolean literals (true/false) work correctly
+  - WHERE clause with boolean columns works as expected
+  - NOT operator on boolean values is supported
 
 ### Partially Implemented
 - UNION/UNION ALL: Basic structure exists but not fully tested
-- Boolean type: Boolean literals (true/false) are not properly stored or compared
-  - Workaround: Use integer (0/1) or text ('true'/'false') instead
-  - Note: IS NULL/IS NOT NULL expressions return boolean values correctly
+- SELECT without FROM clause: Now supported for PostgreSQL compatibility
 
 ### Not Yet Implemented
 - ILIKE operator (case-insensitive LIKE)
@@ -312,3 +322,4 @@ Place test files in the appropriate subdirectory:
 - `comments/` - SQL comment handling
 - `data_types/` - Data type specific tests (boolean, numeric, text, etc.)
 - `functions/` - SQL functions (UPPER, LOWER, COALESCE, etc.)
+- `type_safety/` - Type inference and type mismatch tests
