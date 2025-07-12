@@ -31,6 +31,7 @@ func TestIndividualSQLFiles(t *testing.T) {
 		"comments",
 		"data_types",
 		"functions",
+		"type_safety",
 	}
 
 	for _, category := range testCategories {

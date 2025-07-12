@@ -211,7 +211,16 @@ func executePgInsert(stmt *pg_query.InsertStmt, dataStore *storage.DataStore, me
 					values := list.List.Items
 					for i, val := range values {
 						if i < len(columns) {
-							row[columns[i]] = extractPgValue(val)
+							extractedValue := extractPgValue(val)
+							// Validate type before inserting
+							if err := metaStore.ValidateValueType(tableName, columns[i], extractedValue); err != nil {
+								return nil, nil, "", err
+							}
+							row[columns[i]] = extractedValue
+							// Set type information
+							if err := metaStore.SetColumnType(tableName, columns[i], extractedValue); err != nil {
+								return nil, nil, "", err
+							}
 						}
 					}
 					table.Insert(row)
@@ -248,7 +257,15 @@ func executePgUpdate(stmt *pg_query.UpdateStmt, dataStore *storage.DataStore, me
 			if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
 				colName := resTarget.ResTarget.Name
 				value := extractPgValue(resTarget.ResTarget.Val)
+				// Validate type before updating
+				if err := metaStore.ValidateValueType(tableName, colName, value); err != nil {
+					return nil, nil, "", err
+				}
 				row[colName] = value
+				// Set type information
+				if err := metaStore.SetColumnType(tableName, colName, value); err != nil {
+					return nil, nil, "", err
+				}
 				metaStore.AddColumn(tableName, colName)
 			}
 		}

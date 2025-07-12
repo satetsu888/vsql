@@ -46,6 +46,10 @@ func extractAConstValue(aConst *pg_query.A_Const) interface{} {
 		return int(val.Ival.Ival)
 	case *pg_query.A_Const_Fval:
 		if val.Fval != nil {
+			// Parse string to float64
+			if floatVal, err := strconv.ParseFloat(val.Fval.Fval, 64); err == nil {
+				return floatVal
+			}
 			return val.Fval.Fval
 		}
 	case *pg_query.A_Const_Boolval:
