@@ -735,7 +735,7 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 	case pg_query.SubLinkType_EXISTS_SUBLINK:
 		return len(subRows) > 0
 	case pg_query.SubLinkType_ALL_SUBLINK:
-		// Handle ALL comparison (used for NOT IN)
+		// Handle ALL comparison
 		if len(subRows) == 0 {
 			return true
 		}
@@ -751,27 +751,41 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 			return false
 		}
 		
-		// Check if any value in the list is NULL
-		hasNull := false
-		for _, subRow := range subRows {
-			for _, val := range subRow {
-				if val == nil {
-					hasNull = true
-				}
-				break // Only check first column
+		// Extract operator from operName if present
+		operator := "="
+		if sublink.OperName != nil && len(sublink.OperName) > 0 {
+			if opNode, ok := sublink.OperName[0].Node.(*pg_query.Node_String_); ok {
+				operator = opNode.String_.Sval
 			}
 		}
 		
-		// If list contains NULL, NOT IN returns UNKNOWN (false) for all non-NULL values
-		if hasNull {
-			return false
+		// Check if any value in the list is NULL (only for equality operators)
+		if operator == "=" || operator == "<>" || operator == "!=" {
+			hasNull := false
+			for _, subRow := range subRows {
+				for _, val := range subRow {
+					if val == nil {
+						hasNull = true
+					}
+					break // Only check first column
+				}
+			}
+			
+			// If list contains NULL, NOT IN returns UNKNOWN (false) for all non-NULL values
+			if hasNull && operator == "=" {
+				return false
+			}
 		}
 		
-		// Check if testValue doesn't match all rows in subquery result
+		// Check if testValue satisfies the operator with ALL rows in subquery result
 		for _, subRow := range subRows {
 			// Get the first column value from subquery result
 			for _, val := range subRow {
-				if compareValuesPg(fmt.Sprintf("%v", testValue), "=", val) {
+				if val == nil {
+					continue // Skip NULL values
+				}
+				// For ALL, the condition must be true for all values
+				if !compareValuesPg(fmt.Sprintf("%v", testValue), operator, val) {
 					return false
 				}
 				break // Only check first column
@@ -795,7 +809,15 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 			return false
 		}
 		
-		// Check if testValue matches any row in subquery result
+		// Extract operator from operName if present
+		operator := "="
+		if sublink.OperName != nil && len(sublink.OperName) > 0 {
+			if opNode, ok := sublink.OperName[0].Node.(*pg_query.Node_String_); ok {
+				operator = opNode.String_.Sval
+			}
+		}
+		
+		// Check if testValue matches any row in subquery result based on operator
 		for _, subRow := range subRows {
 			// Get the first column value from subquery result
 			for _, val := range subRow {
@@ -803,7 +825,7 @@ func evaluateSubqueryExpression(row storage.Row, sublink *pg_query.SubLink, ctx 
 				if val == nil {
 					continue
 				}
-				if compareValuesPg(fmt.Sprintf("%v", testValue), "=", val) {
+				if compareValuesPg(fmt.Sprintf("%v", testValue), operator, val) {
 					return true
 				}
 				break // Only check first column

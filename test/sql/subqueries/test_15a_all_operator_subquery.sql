@@ -1,6 +1,5 @@
 -- Test: ALL operator with subquery
 -- Expected: 3 rows (Laptop, iPhone, Android Phone - products with price > 75.00)
--- Status: FAILING - ALL operator not implemented
 -- Testing ALL operator with subqueries
 
 -- Setup

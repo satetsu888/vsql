@@ -1,6 +1,5 @@
 -- Test: ANY operator with subquery
 -- Expected: 2 rows (Laptop, iPhone - products with price > 799.00)
--- Status: FAILING - ANY operator not implemented
 -- Testing ANY operator with subqueries
 
 -- Setup
