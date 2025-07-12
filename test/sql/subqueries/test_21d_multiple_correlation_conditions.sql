@@ -1,5 +1,5 @@
 -- Test: Multiple correlation conditions
--- Expected: 2 rows (Alice, Eve - employees with salary > department budget / 5)
+-- Expected: 3 rows (Charlie, David, Eve - employees with salary > department budget / 5)
 -- Status: FAILING - Multiple references to outer table
 
 -- Setup

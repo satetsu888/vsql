@@ -1,7 +1,6 @@
 -- Test 8: Correlated subquery with comparison
 -- Expected: 2 rows
--- Status: FAILING - Returns 0 rows instead of 2 rows
--- Testing correlated subquery in WHERE clause - correlated subqueries not fully supported
+-- Testing correlated subquery in WHERE clause with scalar comparison
 
 -- Setup
 CREATE TABLE orders (id int, user_id int, product_id int, quantity int, price decimal, created_at timestamp);

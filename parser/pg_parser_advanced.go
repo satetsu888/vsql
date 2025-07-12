@@ -1125,6 +1125,14 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 		case *pg_query.Node_AConst:
 			// Handle constant
 			return extractAConstValue(val.AConst), colName
+		case *pg_query.Node_AExpr:
+			// Handle arithmetic/string expressions
+			result := evaluateAExprValue(currentRow, val.AExpr, ctx)
+			if colName == "" {
+				// For expressions, use a descriptive name
+				colName = "expr"
+			}
+			return result, colName
 		case *pg_query.Node_SubLink:
 			// Handle subquery in SELECT
 			subRows, _ := executeSubquery(val.SubLink.Subselect, ctx)
@@ -1134,6 +1142,10 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 				}
 			}
 			return nil, colName
+		default:
+			// Try to extract value using general method
+			result := extractValueFromNodeWithContext(currentRow, resTarget.Val, ctx)
+			return result, colName
 		}
 	}
 
@@ -1179,6 +1191,9 @@ func evaluateExpression(node *pg_query.Node, row storage.Row, ctx *QueryContext)
 		}
 	case *pg_query.Node_AConst:
 		return extractAConstValue(n.AConst)
+	case *pg_query.Node_AExpr:
+		// Handle arithmetic/string expressions
+		return evaluateAExprValue(row, n.AExpr, ctx)
 	case *pg_query.Node_FuncCall:
 		funcName := getFunctionName(n.FuncCall)
 		if isAggregateFunction(funcName) {
@@ -1776,6 +1791,59 @@ func evaluateNullTestWithContext(row storage.Row, expr *pg_query.NullTest, ctx *
 	}
 }
 
+func evaluateAExprValue(row storage.Row, expr *pg_query.A_Expr, ctx *QueryContext) interface{} {
+	// Extract left and right values
+	var leftVal, rightVal interface{}
+	
+	if expr.Lexpr != nil {
+		leftVal = extractValueFromNodeWithContext(row, expr.Lexpr, ctx)
+	}
+	if expr.Rexpr != nil {
+		rightVal = extractValueFromNodeWithContext(row, expr.Rexpr, ctx)
+	}
+	
+	// Get operator
+	op := ""
+	if len(expr.Name) > 0 {
+		if str, ok := expr.Name[0].Node.(*pg_query.Node_String_); ok {
+			op = str.String_.Sval
+		}
+	}
+	
+	
+	// Perform arithmetic operation
+	switch op {
+	case "+":
+		left, _ := toFloat64(leftVal)
+		right, _ := toFloat64(rightVal)
+		return left + right
+	case "-":
+		left, _ := toFloat64(leftVal)
+		right, _ := toFloat64(rightVal)
+		return left - right
+	case "*":
+		left, _ := toFloat64(leftVal)
+		right, _ := toFloat64(rightVal)
+		return left * right
+	case "/":
+		left, _ := toFloat64(leftVal)
+		right, _ := toFloat64(rightVal)
+		if right != 0 {
+			return left / right
+		}
+		return nil
+	case "||":
+		// String concatenation - if either operand is NULL, result is NULL
+		if leftVal == nil || rightVal == nil {
+			return nil
+		}
+		return fmt.Sprintf("%v%v", leftVal, rightVal)
+	default:
+		// For comparison operators, return boolean result
+		return compareValuesPg(leftVal, op, rightVal)
+	}
+}
+
 func extractValueFromNodeWithContext(row storage.Row, node *pg_query.Node, ctx *QueryContext) interface{} {
 	switch n := node.Node.(type) {
 	case *pg_query.Node_ColumnRef:
@@ -1799,13 +1867,27 @@ func extractValueFromNodeWithContext(row storage.Row, node *pg_query.Node, ctx *
 			}
 			
 			// If not found in current row, check if this is an outer table
-			if _, isOuterTable := ctx.outerTables[tableName]; isOuterTable && ctx.currentRow != nil {
-				// This table is from an outer query, use currentRow
-				if val, exists := ctx.currentRow[columnName]; exists {
-					return val
+			if _, isOuterTable := ctx.outerTables[tableName]; isOuterTable {
+				// This table is from an outer query
+				// First check the most recent outer row in the stack
+				if len(ctx.outerRows) > 0 {
+					for _, outerRow := range ctx.outerRows {
+						if val, exists := outerRow[columnName]; exists {
+							return val
+						}
+						if val, exists := outerRow[qualifiedName]; exists {
+							return val
+						}
+					}
 				}
-				if val, exists := ctx.currentRow[qualifiedName]; exists {
-					return val
+				// Also check currentRow if available
+				if ctx.currentRow != nil {
+					if val, exists := ctx.currentRow[columnName]; exists {
+						return val
+					}
+					if val, exists := ctx.currentRow[qualifiedName]; exists {
+						return val
+					}
 				}
 			}
 			
@@ -1850,9 +1932,27 @@ func extractValueFromNodeWithContext(row storage.Row, node *pg_query.Node, ctx *
 		}
 	case *pg_query.Node_AConst:
 		return extractAConstValue(n.AConst)
+	case *pg_query.Node_AExpr:
+		// Handle arithmetic expressions
+		return evaluateAExprValue(row, n.AExpr, ctx)
 	case *pg_query.Node_SubLink:
 		// Handle scalar subquery
+		// Store current row for correlated subqueries
+		oldRow := ctx.currentRow
+		oldOuterRows := ctx.outerRows
+		
+		// Push current row onto outer rows stack
+		if row != nil {
+			ctx.outerRows = append([]storage.Row{row}, ctx.outerRows...)
+			ctx.currentRow = row
+		}
+		
 		subRows, err := executeSubquery(n.SubLink.Subselect, ctx)
+		
+		// Restore previous state
+		ctx.currentRow = oldRow
+		ctx.outerRows = oldOuterRows
+		
 		if err != nil || len(subRows) != 1 || len(subRows[0]) == 0 {
 			return nil
 		}
