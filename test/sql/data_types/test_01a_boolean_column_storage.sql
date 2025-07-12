@@ -1,6 +1,5 @@
 -- Test: Boolean column storage
--- Expected: 2 rows (with true and false values, but actually returns empty or NULL values)
--- Status: FAILING - Boolean values are not properly stored
+-- Expected: 2 rows (with true and false values)
 
 CREATE TABLE bool_test (id int, active boolean);
 INSERT INTO bool_test VALUES (1, true), (2, false);
