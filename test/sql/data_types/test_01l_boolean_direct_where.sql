@@ -1,6 +1,5 @@
 -- Test: Boolean column directly in WHERE clause (without comparison)
 -- Expected: 2 rows (only true values)
--- Status: FAILING
 -- Note: In standard SQL, WHERE <boolean_column> is equivalent to WHERE <boolean_column> = true
 
 CREATE TABLE bool_direct (id int, active boolean);

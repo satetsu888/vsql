@@ -384,6 +384,28 @@ func evaluatePgWhere(row storage.Row, whereClause *pg_query.Node) bool {
 	case *pg_query.Node_SubLink:
 		// Handle subqueries - simplified version
 		return true // Will be handled by advanced query processor
+	case *pg_query.Node_ColumnRef:
+		// Handle boolean column directly in WHERE clause
+		val := extractValueFromExpr(row, whereClause)
+		if val == nil {
+			return false
+		}
+		// Try to evaluate as boolean
+		if boolVal, ok := val.(bool); ok {
+			return boolVal
+		}
+		// For other types, non-nil/non-zero values are considered true
+		return true
+	case *pg_query.Node_AConst:
+		// Handle boolean literals (true/false)
+		val := extractValueFromExpr(row, whereClause)
+		if val == nil {
+			return false
+		}
+		if boolVal, ok := val.(bool); ok {
+			return boolVal
+		}
+		return true
 	default:
 		return true
 	}

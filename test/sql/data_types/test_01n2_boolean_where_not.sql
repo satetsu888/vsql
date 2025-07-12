@@ -1,8 +1,7 @@
 -- Test: NOT operator on boolean column  
 -- Expected: 2 rows
--- Status: FAILING
 -- Standard SQL: WHERE NOT active should return rows where active=false (ids: 3,4)
--- Currently returns 0 rows
+-- Note: NULL values should not be included as NOT NULL = NULL (unknown)
 
 CREATE TABLE bool_std (id int, active boolean, verified boolean);
 INSERT INTO bool_std VALUES 
