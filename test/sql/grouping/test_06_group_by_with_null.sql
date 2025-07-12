@@ -1,6 +1,5 @@
 -- Test 12: GROUP BY with NULLs
 -- Expected: 4 rows
--- Status: FAILING
 
 -- Create test table
 CREATE TABLE null_test (
