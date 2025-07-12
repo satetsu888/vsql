@@ -202,6 +202,22 @@ func processFromNode(ctx *QueryContext, node *pg_query.Node) ([]storage.Row, err
 			ctx.tables[realTableName] = ctx.tables[aliasName]
 		}
 		
+		// If we have an alias, enrich rows with qualified column names
+		if aliasName != "" {
+			enrichedRows := make([]storage.Row, len(rows))
+			for i, row := range rows {
+				enrichedRow := make(storage.Row)
+				for k, v := range row {
+					// Add unqualified name
+					enrichedRow[k] = v
+					// Add qualified name
+					enrichedRow[aliasName+"."+k] = v
+				}
+				enrichedRows[i] = enrichedRow
+			}
+			return enrichedRows, nil
+		}
+		
 		return rows, nil
 	case *pg_query.Node_JoinExpr:
 		// Handle JOIN
@@ -631,35 +647,37 @@ func mergeRowsWithAliases(left, right storage.Row, leftAlias, rightAlias string)
 	
 	// Add left row columns
 	for k, v := range left {
+		// Skip already qualified names when processing
+		if strings.Contains(k, ".") {
+			merged[k] = v
+			continue
+		}
+		
 		// Always add the original key
 		merged[k] = v
 		
-		// If there's a conflict and we have an alias, also add the qualified version
-		if conflicts[k] && leftAlias != "" {
+		// Always add the qualified version when we have an alias
+		if leftAlias != "" {
 			merged[leftAlias+"."+k] = v
-		}
-		
-		// Preserve any existing qualified column names (e.g., from nested joins)
-		if strings.Contains(k, ".") {
-			merged[k] = v
 		}
 	}
 	
 	// Add right row columns
 	for k, v := range right {
-		// Only add if not already present (left takes precedence for unqualified names)
-		if _, exists := merged[k]; !exists || strings.Contains(k, ".") {
-			merged[k] = v
-		}
-		
-		// If there's a conflict and we have an alias, also add the qualified version
-		if conflicts[k] && rightAlias != "" {
-			merged[rightAlias+"."+k] = v
-		}
-		
-		// Preserve any existing qualified column names
+		// Skip already qualified names when processing
 		if strings.Contains(k, ".") {
 			merged[k] = v
+			continue
+		}
+		
+		// Only add unqualified if not already present (left takes precedence for unqualified names)
+		if _, exists := merged[k]; !exists {
+			merged[k] = v
+		}
+		
+		// Always add the qualified version when we have an alias
+		if rightAlias != "" {
+			merged[rightAlias+"."+k] = v
 		}
 	}
 	
@@ -723,24 +741,7 @@ func executeSubquery(subquery *pg_query.Node, ctx *QueryContext) ([]storage.Row,
 func filterRows(rows []storage.Row, whereClause *pg_query.Node, ctx *QueryContext) []storage.Row {
 	var filtered []storage.Row
 	for _, row := range rows {
-		// Create an enriched row that includes qualified column names for outer query references
-		enrichedRow := make(storage.Row)
-		for k, v := range row {
-			enrichedRow[k] = v
-		}
-		
-		// Add qualified names for all tables in context
-		// Since we can't easily determine which table a row belongs to,
-		// add qualified names for all table aliases in the context
-		for tableName := range ctx.tables {
-			// Add qualified names for all columns
-			for colName, colVal := range row {
-				qualifiedName := tableName + "." + colName
-				enrichedRow[qualifiedName] = colVal
-			}
-		}
-		
-		if evaluateWhereWithSubqueries(enrichedRow, whereClause, ctx) {
+		if evaluateWhereWithSubqueries(row, whereClause, ctx) {
 			filtered = append(filtered, row)
 		}
 	}
@@ -1204,6 +1205,13 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 				}
 			}
 			return nil, colName
+		case *pg_query.Node_NullTest:
+			// Handle IS NULL / IS NOT NULL
+			result := evaluateNullTestWithContext(currentRow, val.NullTest, ctx)
+			if colName == "" {
+				colName = "?column?"
+			}
+			return result, colName
 		default:
 			// Try to extract value using general method
 			result := extractValueFromNodeWithContext(currentRow, resTarget.Val, ctx)
@@ -1286,6 +1294,9 @@ func evaluateExpression(node *pg_query.Node, row storage.Row, ctx *QueryContext)
 			return nil
 		}
 		return evaluateScalarFunction(n.FuncCall, row, ctx)
+	case *pg_query.Node_NullTest:
+		// Handle IS NULL / IS NOT NULL
+		return evaluateNullTestWithContext(row, n.NullTest, ctx)
 	}
 	return nil
 }
@@ -2044,6 +2055,9 @@ func extractValueFromNodeWithContext(row storage.Row, node *pg_query.Node, ctx *
 		for _, val := range subRows[0] {
 			return val
 		}
+	case *pg_query.Node_NullTest:
+		// Handle IS NULL / IS NOT NULL
+		return evaluateNullTestWithContext(row, n.NullTest, ctx)
 	}
 	return nil
 }
