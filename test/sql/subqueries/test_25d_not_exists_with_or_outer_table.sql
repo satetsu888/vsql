@@ -1,8 +1,6 @@
 -- Test: NOT EXISTS with OR referencing outer table
 -- Expected: Should return users without posts AND not active (David)
--- Actual: May return incorrect results
 -- Expected: 1 row
--- Status: FAILING
 
 -- Setup
 CREATE TABLE users (id int, name text, active int, country text);
