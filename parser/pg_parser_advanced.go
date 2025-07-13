@@ -246,7 +246,25 @@ func processFromNode(ctx *QueryContext, node *pg_query.Node) ([]storage.Row, err
 		
 		return performJoinWithContext(leftRows, rightRows, n.JoinExpr, leftAlias, rightAlias, ctx), nil
 	case *pg_query.Node_RangeSubselect:
-		return executeSubquery(n.RangeSubselect.Subquery, ctx)
+		// Execute the subquery
+		rows, err := executeSubquery(n.RangeSubselect.Subquery, ctx)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Handle alias for the subquery result
+		if n.RangeSubselect.Alias != nil && n.RangeSubselect.Alias.Aliasname != "" {
+			aliasName := n.RangeSubselect.Alias.Aliasname
+			
+			// Create a table context for the subquery result
+			ctx.tables[aliasName] = &TableContext{
+				name:  aliasName,
+				alias: aliasName, 
+				rows:  rows,
+			}
+		}
+		
+		return rows, nil
 	}
 	log.Printf("WARNING: Unsupported FROM node type in query. Returning empty result.\n")
 	return []storage.Row{}, nil
@@ -731,7 +749,18 @@ func executeSubquery(subquery *pg_query.Node, ctx *QueryContext) ([]storage.Row,
 			// Map values to their column names
 			for i, val := range row {
 				if i < len(columns) {
-					storageRow[columns[i]] = val
+					colName := columns[i]
+					
+					// For derived tables, also store values with unqualified column names
+					// This allows the outer query to reference columns without table prefixes
+					if strings.Contains(colName, ".") {
+						parts := strings.Split(colName, ".")
+						simpleColName := parts[len(parts)-1]
+						storageRow[simpleColName] = val
+					}
+					
+					// Always store with the original column name too
+					storageRow[colName] = val
 				} else {
 					storageRow[fmt.Sprintf("col%d", i)] = val
 				}
@@ -1277,9 +1306,41 @@ func evaluateExpression(node *pg_query.Node, row storage.Row, ctx *QueryContext)
 	switch n := node.Node.(type) {
 	case *pg_query.Node_ColumnRef:
 		if len(n.ColumnRef.Fields) > 0 {
-			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
-				return row[str.String_.Sval]
+			// Handle both qualified and unqualified column references
+			var colName string
+			
+			if len(n.ColumnRef.Fields) == 1 {
+				// Unqualified column reference
+				if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+					colName = str.String_.Sval
+				}
+			} else if len(n.ColumnRef.Fields) == 2 {
+				// Qualified column reference (table.column)
+				if str, ok := n.ColumnRef.Fields[1].Node.(*pg_query.Node_String_); ok {
+					colName = str.String_.Sval
+				}
 			}
+			
+			// First try the simple column name
+			if val, exists := row[colName]; exists {
+				return val
+			}
+			
+			// If not found and it's a qualified reference, try the qualified name
+			if len(n.ColumnRef.Fields) > 1 {
+				var parts []string
+				for _, field := range n.ColumnRef.Fields {
+					if str, ok := field.Node.(*pg_query.Node_String_); ok {
+						parts = append(parts, str.String_.Sval)
+					}
+				}
+				qualifiedName := strings.Join(parts, ".")
+				if val, exists := row[qualifiedName]; exists {
+					return val
+				}
+			}
+			
+			return nil
 		}
 	case *pg_query.Node_AConst:
 		return extractAConstValue(n.AConst)
@@ -1308,9 +1369,14 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 
 	funcName := getFunctionName(funcCall)
 	
-	// Extract column name for aggregate
+	// Extract column name or prepare to evaluate expression
 	var colName string
+	var isExpression bool
+	var argExpr *pg_query.Node
+	
 	if len(funcCall.Args) > 0 {
+		argExpr = funcCall.Args[0]
+		
 		if colRef, ok := funcCall.Args[0].Node.(*pg_query.Node_ColumnRef); ok {
 			fields := colRef.ColumnRef.Fields
 			if len(fields) == 2 {
@@ -1324,6 +1390,9 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 					colName = str.String_.Sval
 				}
 			}
+		} else {
+			// It's an expression, not just a column reference
+			isExpression = true
 		}
 	}
 
@@ -1349,11 +1418,30 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 			}
 			return count
 		} else {
-			// Regular COUNT(column)
+			// Regular COUNT(column or expression)
 			count := 0
-			for _, row := range rows {
-				if row[colName] != nil {
-					count++
+			
+			if isExpression && argExpr != nil {
+				// Create a temporary context for expression evaluation
+				tmpCtx := &QueryContext{
+					dataStore: nil,
+					metaStore: nil,
+					tables:    make(map[string]*TableContext),
+				}
+				
+				for _, row := range rows {
+					tmpCtx.currentRow = row
+					val := evaluateExpression(argExpr, row, tmpCtx)
+					if val != nil {
+						count++
+					}
+				}
+			} else {
+				// Simple column reference
+				for _, row := range rows {
+					if row[colName] != nil {
+						count++
+					}
 				}
 			}
 			return count
@@ -1362,14 +1450,38 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 	case "SUM":
 		var sum float64
 		hasNonNullValue := false
-		for _, row := range rows {
-			if val := row[colName]; val != nil {
-				if num, err := toFloat64(val); err == nil {
-					sum += num
-					hasNonNullValue = true
+		
+		if isExpression && argExpr != nil {
+			// Create a temporary context for expression evaluation
+			tmpCtx := &QueryContext{
+				dataStore: nil,
+				metaStore: nil,
+				tables:    make(map[string]*TableContext),
+			}
+			
+			// Evaluate the expression for each row
+			for _, row := range rows {
+				tmpCtx.currentRow = row
+				val := evaluateExpression(argExpr, row, tmpCtx)
+				if val != nil {
+					if num, err := toFloat64(val); err == nil {
+						sum += num
+						hasNonNullValue = true
+					}
+				}
+			}
+		} else {
+			// Simple column reference
+			for _, row := range rows {
+				if val := row[colName]; val != nil {
+					if num, err := toFloat64(val); err == nil {
+						sum += num
+						hasNonNullValue = true
+					}
 				}
 			}
 		}
+		
 		// SQL standard: SUM returns NULL if no non-NULL values
 		if !hasNonNullValue {
 			return nil
@@ -1379,14 +1491,37 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 	case "AVG":
 		var sum float64
 		count := 0
-		for _, row := range rows {
-			if val := row[colName]; val != nil {
-				if num, err := toFloat64(val); err == nil {
-					sum += num
-					count++
+		
+		if isExpression && argExpr != nil {
+			// Create a temporary context for expression evaluation
+			tmpCtx := &QueryContext{
+				dataStore: nil,
+				metaStore: nil,
+				tables:    make(map[string]*TableContext),
+			}
+			
+			for _, row := range rows {
+				tmpCtx.currentRow = row
+				val := evaluateExpression(argExpr, row, tmpCtx)
+				if val != nil {
+					if num, err := toFloat64(val); err == nil {
+						sum += num
+						count++
+					}
+				}
+			}
+		} else {
+			// Simple column reference
+			for _, row := range rows {
+				if val := row[colName]; val != nil {
+					if num, err := toFloat64(val); err == nil {
+						sum += num
+						count++
+					}
 				}
 			}
 		}
+		
 		if count == 0 {
 			return nil
 		}
@@ -1394,10 +1529,31 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 
 	case "MAX":
 		var max interface{}
-		for _, row := range rows {
-			if val := row[colName]; val != nil {
-				if max == nil || compareValuesPg(fmt.Sprintf("%v", val), ">", max) {
-					max = val
+		
+		if isExpression && argExpr != nil {
+			// Create a temporary context for expression evaluation
+			tmpCtx := &QueryContext{
+				dataStore: nil,
+				metaStore: nil,
+				tables:    make(map[string]*TableContext),
+			}
+			
+			for _, row := range rows {
+				tmpCtx.currentRow = row
+				val := evaluateExpression(argExpr, row, tmpCtx)
+				if val != nil {
+					if max == nil || compareValuesPg(fmt.Sprintf("%v", val), ">", max) {
+						max = val
+					}
+				}
+			}
+		} else {
+			// Simple column reference
+			for _, row := range rows {
+				if val := row[colName]; val != nil {
+					if max == nil || compareValuesPg(fmt.Sprintf("%v", val), ">", max) {
+						max = val
+					}
 				}
 			}
 		}
@@ -1405,10 +1561,31 @@ func evaluateAggregateFunction(funcCall *pg_query.FuncCall, rows []storage.Row) 
 
 	case "MIN":
 		var min interface{}
-		for _, row := range rows {
-			if val := row[colName]; val != nil {
-				if min == nil || compareValuesPg(fmt.Sprintf("%v", val), "<", min) {
-					min = val
+		
+		if isExpression && argExpr != nil {
+			// Create a temporary context for expression evaluation
+			tmpCtx := &QueryContext{
+				dataStore: nil,
+				metaStore: nil,
+				tables:    make(map[string]*TableContext),
+			}
+			
+			for _, row := range rows {
+				tmpCtx.currentRow = row
+				val := evaluateExpression(argExpr, row, tmpCtx)
+				if val != nil {
+					if min == nil || compareValuesPg(fmt.Sprintf("%v", val), "<", min) {
+						min = val
+					}
+				}
+			}
+		} else {
+			// Simple column reference
+			for _, row := range rows {
+				if val := row[colName]; val != nil {
+					if min == nil || compareValuesPg(fmt.Sprintf("%v", val), "<", min) {
+						min = val
+					}
 				}
 			}
 		}
