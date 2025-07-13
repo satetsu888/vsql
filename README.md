@@ -1,5 +1,14 @@
 # VSQL - The Migration-Free Development Database
 
+> ⚠️ **This project is currently PENDING**
+> 
+> Development has been suspended due to a fundamental architectural conflict between schema-less design and properly generating PostgreSQL protocol's RowDescription messages.
+> 
+> **Current Status:**
+> - ✅ Basic queries from psql work
+> - ❌ Queries from ORMs (ActiveRecord, Prisma, SQLAlchemy, etc.) often fail
+> - ❌ Client libraries that require type information do not work as expected
+
 [![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Docker Pulls](https://img.shields.io/docker/pulls/satetsu888/vsql.svg)](https://hub.docker.com/r/satetsu888/vsql)
