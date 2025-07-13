@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 
@@ -98,24 +99,29 @@ func (s *Server) handleConnection(conn net.Conn) {
 			} else {
 				WriteParseComplete(writer)
 			}
+			writer.Flush()
 		case Bind:
 			if err := s.handleBind(msg.Data, extState, writer); err != nil {
 				WriteErrorResponse(writer, err.Error())
 			} else {
 				WriteBindComplete(writer)
 			}
+			writer.Flush()
 		case Execute:
 			if err := s.handleExecute(msg.Data, extState, writer); err != nil {
 				WriteErrorResponse(writer, err.Error())
 			}
+			writer.Flush()
 		case Describe:
 			if err := s.handleDescribe(msg.Data, extState, writer); err != nil {
 				WriteErrorResponse(writer, err.Error())
 			}
+			writer.Flush()
 		case Close:
 			if err := s.handleClose(msg.Data, extState, writer); err != nil {
 				WriteErrorResponse(writer, err.Error())
 			}
+			writer.Flush()
 		case Sync:
 			// Sync completes the current extended query protocol sequence
 			WriteReadyForQuery(writer)
@@ -234,12 +240,28 @@ func (s *Server) handleParse(data []byte, extState *ExtendedProtocolState, w *bu
 		return fmt.Errorf("parse error: %v", err)
 	}
 	
+	// If client didn't specify parameter types, analyze the query to determine them
+	actualParamTypes := paramTypes
+	if len(paramTypes) == 0 {
+		// Count parameters in the query
+		paramCount := countParameters(query)
+		if paramCount > 0 {
+			actualParamTypes = make([]int32, paramCount)
+			// Default to unknown type (0) - PostgreSQL will infer types later
+			for i := range actualParamTypes {
+				actualParamTypes[i] = 0
+			}
+			// Try to infer types from query context
+			actualParamTypes = inferParameterTypes(query, parsedQuery)
+		}
+	}
+	
 	// Create and store the prepared statement
 	stmt := &PreparedStatement{
 		Name:        statementName,
 		Query:       query,
 		ParsedQuery: parsedQuery,
-		ParamTypes:  paramTypes,
+		ParamTypes:  actualParamTypes,
 	}
 	
 	extState.StorePreparedStatement(stmt)
@@ -363,7 +385,35 @@ func (s *Server) handleExecute(data []byte, extState *ExtendedProtocolState, w *
 	
 	// Send row description if this is a SELECT-like query
 	if columns != nil {
-		if err := WriteRowDescription(w, columns); err != nil {
+		// Analyze the query to get proper column descriptions with types
+		var colDescs []ColumnDescription
+		if portal.Statement.ParsedQuery != nil && len(portal.Statement.ParsedQuery.Stmts) > 0 {
+			if stmt := portal.Statement.ParsedQuery.Stmts[0].Stmt; stmt != nil {
+				if selectStmt, ok := stmt.Node.(*pg_query.Node_SelectStmt); ok {
+					colDescs, err = s.analyzeSelectColumns(selectStmt.SelectStmt)
+					if err != nil {
+						return err
+					}
+				}
+			}
+		}
+		
+		// If we couldn't analyze the query, fall back to simple column names
+		if len(colDescs) == 0 {
+			for _, col := range columns {
+				colDescs = append(colDescs, ColumnDescription{
+					Name:      col,
+					TableOID:  0,
+					ColumnNum: 0,
+					TypeOID:   OIDText,
+					TypeSize:  -1,
+					TypeMod:   -1,
+					Format:    0,
+				})
+			}
+		}
+		
+		if err := WriteRowDescriptionExt(w, colDescs); err != nil {
 			return err
 		}
 		
@@ -412,7 +462,47 @@ func (s *Server) handleDescribe(data []byte, extState *ExtendedProtocolState, w 
 		}
 		
 		// Send parameter description
-		return WriteParameterDescription(w, stmt.ParamTypes)
+		if err := WriteParameterDescription(w, stmt.ParamTypes); err != nil {
+			return err
+		}
+		
+		// Also need to send row description or no data
+		if stmt.ParsedQuery != nil && len(stmt.ParsedQuery.Stmts) > 0 {
+			if stmtNode := stmt.ParsedQuery.Stmts[0].Stmt; stmtNode != nil {
+				switch node := stmtNode.Node.(type) {
+				case *pg_query.Node_SelectStmt:
+					// Analyze the SELECT query to get column descriptions
+					colDescs, err := s.analyzeSelectColumns(node.SelectStmt)
+					if err != nil {
+						return err
+					}
+					return WriteRowDescriptionExt(w, colDescs)
+				case *pg_query.Node_InsertStmt:
+					if node.InsertStmt.ReturningList != nil {
+						// INSERT ... RETURNING has result columns
+						return WriteRowDescription(w, []string{"result"})
+					}
+					return WriteNoData(w)
+				case *pg_query.Node_UpdateStmt:
+					if node.UpdateStmt.ReturningList != nil {
+						// UPDATE ... RETURNING has result columns
+						return WriteRowDescription(w, []string{"result"})
+					}
+					return WriteNoData(w)
+				case *pg_query.Node_DeleteStmt:
+					if node.DeleteStmt.ReturningList != nil {
+						// DELETE ... RETURNING has result columns
+						return WriteRowDescription(w, []string{"result"})
+					}
+					return WriteNoData(w)
+				default:
+					// Other statement types have no data
+					return WriteNoData(w)
+				}
+			}
+		}
+		
+		return WriteNoData(w)
 		
 	case 'P': // Describe portal
 		portal, err := extState.GetPortal(name)
@@ -427,10 +517,16 @@ func (s *Server) handleDescribe(data []byte, extState *ExtendedProtocolState, w 
 			if stmt := portal.Statement.ParsedQuery.Stmts[0].Stmt; stmt != nil {
 				switch stmt.Node.(type) {
 				case *pg_query.Node_SelectStmt:
-					// For now, we'll send a generic row description
-					// A full implementation would analyze the query to determine actual columns
-					columns := []string{"result"}
-					return WriteRowDescription(w, columns)
+					// Analyze the SELECT query to get column descriptions
+					if selectStmt, ok := stmt.Node.(*pg_query.Node_SelectStmt); ok {
+						colDescs, err := s.analyzeSelectColumns(selectStmt.SelectStmt)
+						if err != nil {
+							return err
+						}
+						return WriteRowDescriptionExt(w, colDescs)
+					}
+					// Fallback to generic description
+					return WriteRowDescription(w, []string{"result"})
 				default:
 					// Non-SELECT queries have no data
 					return WriteNoData(w)
@@ -475,7 +571,7 @@ func (s *Server) handleClose(data []byte, extState *ExtendedProtocolState, w *bu
 	}
 	
 	// Send CloseComplete
-	return WriteMessage(w, '3', []byte{})
+	return WriteMessage(w, CloseComplete, []byte{})
 }
 
 // executePortal executes a portal with bound parameters
@@ -494,9 +590,64 @@ func (s *Server) executePortal(portal *Portal) ([]string, [][]interface{}, strin
 		if paramValue == nil {
 			value = "NULL"
 		} else {
-			// For now, treat all parameters as text
-			// A full implementation would handle different formats based on ParameterFormats
-			value = fmt.Sprintf("'%s'", string(paramValue))
+			// Check the parameter type to determine formatting
+			paramType := int32(0) // Default to unknown
+			if i < len(portal.Statement.ParamTypes) {
+				paramType = portal.Statement.ParamTypes[i]
+			}
+			
+			// Check the parameter format (text vs binary)
+			paramFormat := int16(0) // Default to text
+			if i < len(portal.ParameterFormats) {
+				paramFormat = portal.ParameterFormats[i]
+			}
+			
+			// Format the value based on type
+			switch paramType {
+			case OIDInt2, OIDInt4, OIDInt8:
+				// Numeric types - don't quote
+				if paramFormat == 1 {
+					// Binary format - decode as integer
+					if len(paramValue) == 8 {
+						// int64 in big-endian
+						intVal := int64(0)
+						for j := 0; j < 8; j++ {
+							intVal = (intVal << 8) | int64(paramValue[j])
+						}
+						value = fmt.Sprintf("%d", intVal)
+					} else if len(paramValue) == 4 {
+						// int32 in big-endian
+						intVal := int32(0)
+						for j := 0; j < 4; j++ {
+							intVal = (intVal << 8) | int32(paramValue[j])
+						}
+						value = fmt.Sprintf("%d", intVal)
+					} else if len(paramValue) == 2 {
+						// int16 in big-endian
+						intVal := int16(0)
+						for j := 0; j < 2; j++ {
+							intVal = (intVal << 8) | int16(paramValue[j])
+						}
+						value = fmt.Sprintf("%d", intVal)
+					} else {
+						// Fallback to text
+						value = string(paramValue)
+					}
+				} else {
+					// Text format
+					value = string(paramValue)
+				}
+			case OIDFloat4, OIDFloat8:
+				// Float types - don't quote
+				value = string(paramValue)
+			case OIDBool:
+				// Boolean type - don't quote
+				value = string(paramValue)
+			default:
+				// Text and other types - quote them
+				escaped := strings.ReplaceAll(string(paramValue), "'", "''")
+				value = fmt.Sprintf("'%s'", escaped)
+			}
 		}
 		replacements[placeholder] = value
 	}
@@ -530,5 +681,217 @@ func readCString(buf *bytes.Reader) (string, error) {
 		result = append(result, b)
 	}
 	return string(result), nil
+}
+
+// analyzeSelectColumns analyzes a SELECT statement and returns column descriptions
+func (s *Server) analyzeSelectColumns(stmt *pg_query.SelectStmt) ([]ColumnDescription, error) {
+	var colDescs []ColumnDescription
+	
+	// Extract table name from FROM clause
+	var tableName string
+	if len(stmt.FromClause) > 0 {
+		tableName = extractTableNameFromNode(stmt.FromClause[0])
+		// Handle quoted names
+		tableName = strings.Trim(tableName, `"`)
+	}
+	
+	// Process target list
+	colNum := int16(1)
+	for _, target := range stmt.TargetList {
+		if resTarget, ok := target.Node.(*pg_query.Node_ResTarget); ok {
+			// Get column name
+			var colName string
+			if resTarget.ResTarget.Name != "" {
+				// Alias is provided
+				colName = resTarget.ResTarget.Name
+			} else if colRef, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_ColumnRef); ok {
+				// Column reference
+				colName = extractColumnName(colRef.ColumnRef)
+			} else if funcCall, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_FuncCall); ok {
+				// Function call
+				colName = extractFunctionName(funcCall.FuncCall)
+			} else if _, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_AConst); ok {
+				// Constant
+				colName = "?column?"
+			} else {
+				// Default name
+				colName = "?column?"
+			}
+			
+			// Get column type
+			var typeOID int32 = OIDText  // Default to text
+			var typeSize int16 = -1
+			var typeMod int32 = -1
+			
+			// Try to determine type from metadata if it's a column reference
+			if tableName != "" && resTarget.ResTarget.Val != nil {
+				if colRef, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_ColumnRef); ok {
+					actualColName := extractColumnName(colRef.ColumnRef)
+					colType := s.metaStore.GetColumnType(tableName, actualColName)
+					// Always use the actual type, even if unknown
+					typeOID = VSQLTypeToOID(colType)
+					typeSize, typeMod = GetTypeSizeAndMod(typeOID)
+				}
+			}
+			
+			colDesc := ColumnDescription{
+				Name:      colName,
+				TableOID:  0,  // We don't track table OIDs yet
+				ColumnNum: colNum,
+				TypeOID:   typeOID,
+				TypeSize:  typeSize,
+				TypeMod:   typeMod,
+				Format:    0,  // Text format
+			}
+			colDescs = append(colDescs, colDesc)
+			colNum++
+		}
+	}
+	
+	// Handle SELECT * case
+	if len(colDescs) == 0 && tableName != "" {
+		// Get all columns from the table
+		columns := s.metaStore.GetTableColumns(tableName)
+		if len(columns) == 0 {
+			// If no columns defined in metastore, try to get from first row
+			// This supports truly schema-less operation
+			table, exists := s.dataStore.GetTable(tableName)
+			if exists {
+				rows := table.GetRows()
+				if len(rows) > 0 {
+					// Get columns from first row
+					for colName := range rows[0] {
+						columns = append(columns, colName)
+					}
+					// Sort for consistent ordering
+					sort.Strings(columns)
+				}
+			}
+		}
+		
+		colNum := int16(1)
+		for _, col := range columns {
+			colType := s.metaStore.GetColumnType(tableName, col)
+			typeOID := VSQLTypeToOID(colType)
+			typeSize, typeMod := GetTypeSizeAndMod(typeOID)
+			
+			colDesc := ColumnDescription{
+				Name:      col,
+				TableOID:  0,
+				ColumnNum: colNum,
+				TypeOID:   typeOID,
+				TypeSize:  typeSize,
+				TypeMod:   typeMod,
+				Format:    0,
+			}
+			colDescs = append(colDescs, colDesc)
+			colNum++
+		}
+	}
+	
+	// If still no columns, return a default
+	if len(colDescs) == 0 {
+		colDescs = append(colDescs, ColumnDescription{
+			Name:      "result",
+			TableOID:  0,
+			ColumnNum: 0,
+			TypeOID:   OIDText,
+			TypeSize:  -1,
+			TypeMod:   -1,
+			Format:    0,
+		})
+	}
+	
+	return colDescs, nil
+}
+
+// extractTableNameFromNode extracts table name from a FROM clause node
+func extractTableNameFromNode(node *pg_query.Node) string {
+	if rangeVar, ok := node.Node.(*pg_query.Node_RangeVar); ok && rangeVar.RangeVar != nil {
+		// Return the table name, removing quotes if present
+		return strings.Trim(rangeVar.RangeVar.Relname, `"`)
+	}
+	return ""
+}
+
+// extractColumnName extracts column name from a ColumnRef
+func extractColumnName(colRef *pg_query.ColumnRef) string {
+	if len(colRef.Fields) > 0 {
+		// Handle qualified names (table.column)
+		var parts []string
+		for _, field := range colRef.Fields {
+			if str, ok := field.Node.(*pg_query.Node_String_); ok {
+				parts = append(parts, str.String_.Sval)
+			}
+		}
+		if len(parts) > 0 {
+			// Return the last part (column name), removing quotes
+			colName := parts[len(parts)-1]
+			return strings.Trim(colName, `"`)
+		}
+	}
+	return "?column?"
+}
+
+// extractFunctionName extracts function name from a FuncCall
+func extractFunctionName(funcCall *pg_query.FuncCall) string {
+	if len(funcCall.Funcname) > 0 {
+		if str, ok := funcCall.Funcname[0].Node.(*pg_query.Node_String_); ok {
+			return str.String_.Sval
+		}
+	}
+	return "?column?"
+}
+
+// countParameters counts the number of parameters ($1, $2, etc.) in a query
+func countParameters(query string) int {
+	maxParam := 0
+	// Simple regex to find $N patterns
+	for i := 0; i < len(query); i++ {
+		if query[i] == '$' && i+1 < len(query) {
+			// Parse the number after $
+			j := i + 1
+			for j < len(query) && query[j] >= '0' && query[j] <= '9' {
+				j++
+			}
+			if j > i+1 {
+				paramNum := 0
+				for k := i+1; k < j; k++ {
+					paramNum = paramNum*10 + int(query[k]-'0')
+				}
+				if paramNum > maxParam {
+					maxParam = paramNum
+				}
+			}
+		}
+	}
+	return maxParam
+}
+
+// inferParameterTypes tries to infer parameter types from query context
+func inferParameterTypes(query string, parsedQuery *pg_query.ParseResult) []int32 {
+	// For now, return int8 (OID 20) for OFFSET parameters
+	// This is a simple implementation - a full implementation would analyze the AST
+	paramCount := countParameters(query)
+	if paramCount == 0 {
+		return nil
+	}
+	
+	paramTypes := make([]int32, paramCount)
+	
+	// Check if the query contains OFFSET $N
+	if strings.Contains(query, "OFFSET") && strings.Contains(query, "$") {
+		// For OFFSET parameters, use int8
+		for i := range paramTypes {
+			paramTypes[i] = OIDInt8  // 20
+		}
+	} else {
+		// Default to unknown
+		for i := range paramTypes {
+			paramTypes[i] = 0
+		}
+	}
+	
+	return paramTypes
 }
 

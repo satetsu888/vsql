@@ -35,6 +35,7 @@ const (
 	Flush               MessageType = 'H'
 	ParameterDescription MessageType = 't'
 	PortalSuspended     MessageType = 's'
+	CloseComplete       MessageType = '3'
 )
 
 type Message struct {
@@ -113,22 +114,51 @@ func WriteErrorResponse(w io.Writer, msg string) error {
 	return WriteMessage(w, ErrorResponse, buf.Bytes())
 }
 
+// ColumnDescription represents metadata for a result column
+type ColumnDescription struct {
+	Name        string
+	TableOID    int32  // OID of table (0 if not from a table)
+	ColumnNum   int16  // Column number in table (0 if not from a table)
+	TypeOID     int32  // PostgreSQL type OID
+	TypeSize    int16  // Type size (-1 for variable length)
+	TypeMod     int32  // Type modifier (-1 if not applicable)
+	Format      int16  // Format code (0 = text, 1 = binary)
+}
+
 func WriteRowDescription(w io.Writer, columns []string) error {
+	// Convert simple column names to ColumnDescription with default type (text)
+	colDescs := make([]ColumnDescription, len(columns))
+	for i, name := range columns {
+		colDescs[i] = ColumnDescription{
+			Name:     name,
+			TableOID: 0,
+			ColumnNum: 0,
+			TypeOID:  25,  // text type
+			TypeSize: -1,
+			TypeMod:  -1,
+			Format:   0,
+		}
+	}
+	return WriteRowDescriptionExt(w, colDescs)
+}
+
+// WriteRowDescriptionExt writes a RowDescription message with full column metadata
+func WriteRowDescriptionExt(w io.Writer, columns []ColumnDescription) error {
 	var buf bytes.Buffer
 	
 	fieldCount := int16(len(columns))
 	binary.Write(&buf, binary.BigEndian, fieldCount)
 	
 	for _, col := range columns {
-		buf.Write([]byte(col))
+		buf.Write([]byte(col.Name))
 		buf.WriteByte(0)
 		
-		binary.Write(&buf, binary.BigEndian, int32(0))
-		binary.Write(&buf, binary.BigEndian, int16(0))
-		binary.Write(&buf, binary.BigEndian, int32(25))
-		binary.Write(&buf, binary.BigEndian, int16(-1))
-		binary.Write(&buf, binary.BigEndian, int32(-1))
-		binary.Write(&buf, binary.BigEndian, int16(0))
+		binary.Write(&buf, binary.BigEndian, col.TableOID)
+		binary.Write(&buf, binary.BigEndian, col.ColumnNum)
+		binary.Write(&buf, binary.BigEndian, col.TypeOID)
+		binary.Write(&buf, binary.BigEndian, col.TypeSize)
+		binary.Write(&buf, binary.BigEndian, col.TypeMod)
+		binary.Write(&buf, binary.BigEndian, col.Format)
 	}
 	
 	return WriteMessage(w, RowDescription, buf.Bytes())

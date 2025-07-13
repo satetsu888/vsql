@@ -210,7 +210,9 @@ func executePgInsert(stmt *pg_query.InsertStmt, dataStore *storage.DataStore, me
 	if stmt.Cols != nil {
 		for _, col := range stmt.Cols {
 			if target, ok := col.Node.(*pg_query.Node_ResTarget); ok {
-				columns = append(columns, target.ResTarget.Name)
+				// Remove quotes if present for consistency
+				colName := strings.Trim(target.ResTarget.Name, `"`)
+				columns = append(columns, colName)
 			}
 		}
 	} else {
@@ -331,17 +333,38 @@ func executePgCreateTable(stmt *pg_query.CreateStmt, dataStore *storage.DataStor
 		return nil, nil, "", err
 	}
 
-	// Extract column names from table elements
+	// Extract column names and types from table elements
 	var columns []string
+	var columnTypes []storage.ColumnType
+	
+	// Collect column names and types
 	for _, elem := range stmt.TableElts {
 		if colDef, ok := elem.Node.(*pg_query.Node_ColumnDef); ok {
-			columns = append(columns, colDef.ColumnDef.Colname)
+			// Remove quotes if present for consistency
+			colName := strings.Trim(colDef.ColumnDef.Colname, `"`)
+			columns = append(columns, colName)
+			
+			// Extract column type if specified
+			if colDef.ColumnDef.TypeName != nil {
+				colType := getColumnTypeFromTypeName(colDef.ColumnDef.TypeName)
+				columnTypes = append(columnTypes, colType)
+			} else {
+				// Default to unknown if no type specified
+				columnTypes = append(columnTypes, storage.TypeUnknown)
+			}
 		}
 	}
 
-	// Store column names in metastore if any were defined
+	// Store column names in metastore
 	if len(columns) > 0 {
 		metaStore.AddColumns(tableName, columns)
+		
+		// Store declared column types
+		for i, colName := range columns {
+			if i < len(columnTypes) && columnTypes[i] != storage.TypeUnknown {
+				metaStore.SetColumnTypeFromSchema(tableName, colName, columnTypes[i])
+			}
+		}
 	}
 
 	return nil, nil, "CREATE TABLE", nil
@@ -351,7 +374,8 @@ func executePgDropTable(stmt *pg_query.DropStmt, dataStore *storage.DataStore, m
 	for _, obj := range stmt.Objects {
 		if list, ok := obj.Node.(*pg_query.Node_List); ok && len(list.List.Items) > 0 {
 			if str, ok := list.List.Items[0].Node.(*pg_query.Node_String_); ok {
-				tableName := str.String_.Sval
+				// Remove quotes if present for consistency
+				tableName := strings.Trim(str.String_.Sval, `"`)
 				dataStore.DropTable(tableName)
 				metaStore.DropTable(tableName)
 			}
@@ -364,16 +388,52 @@ func executePgDropTable(stmt *pg_query.DropStmt, dataStore *storage.DataStore, m
 func extractTableName(node *pg_query.Node) string {
 	switch n := node.Node.(type) {
 	case *pg_query.Node_RangeVar:
-		return n.RangeVar.Relname
+		// Remove quotes if present for consistency
+		return strings.Trim(n.RangeVar.Relname, `"`)
 	}
 	return ""
 }
 
 func extractTableNameFromRangeVar(rv *pg_query.RangeVar) string {
 	if rv != nil {
-		return rv.Relname
+		// Remove quotes if present for consistency
+		return strings.Trim(rv.Relname, `"`)
 	}
 	return ""
+}
+
+// getColumnTypeFromTypeName extracts the column type from a TypeName node
+func getColumnTypeFromTypeName(typeName *pg_query.TypeName) storage.ColumnType {
+	if typeName == nil || len(typeName.Names) == 0 {
+		return storage.TypeString
+	}
+	
+	// Get the type name - it might be schema-qualified (e.g., pg_catalog.integer)
+	var typeStr string
+	for i, name := range typeName.Names {
+		if str, ok := name.Node.(*pg_query.Node_String_); ok {
+			// Take the last part (the actual type name)
+			if i == len(typeName.Names)-1 {
+				typeStr = strings.ToLower(str.String_.Sval)
+			}
+		}
+	}
+	
+	// Map PostgreSQL types to VSQL types
+	switch typeStr {
+	case "bool", "boolean":
+		return storage.TypeBoolean
+	case "int", "int2", "int4", "int8", "integer", "smallint", "bigint":
+		return storage.TypeInteger
+	case "float", "float4", "float8", "real", "double", "numeric", "decimal":
+		return storage.TypeFloat
+	case "timestamp", "timestamptz", "date", "time", "timetz":
+		return storage.TypeTimestamp
+	case "text", "varchar", "char", "bpchar":
+		return storage.TypeString
+	default:
+		return storage.TypeString
+	}
 }
 
 func extractSelectColumns(stmt *pg_query.SelectStmt, tableName string, metaStore *storage.MetaStore, rows []storage.Row) []string {

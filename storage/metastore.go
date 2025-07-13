@@ -101,6 +101,10 @@ func (ms *MetaStore) GetColumnType(tableName, columnName string) ColumnType {
 	
 	if tableTypes, exists := ms.columnTypes[tableName]; exists {
 		if typeInfo, exists := tableTypes[columnName]; exists {
+			// Prefer declared type if available and column has no confirmed data type yet
+			if typeInfo.IsDeclared && !typeInfo.IsConfirmed {
+				return typeInfo.DeclaredType
+			}
 			return typeInfo.CurrentType
 		}
 	}
@@ -135,12 +139,17 @@ func (ms *MetaStore) SetColumnType(tableName, columnName string, value interface
 	// Infer type from value
 	newType := InferTypeFromValue(value)
 	
-	// Check compatibility
-	if !IsTypeCompatible(typeInfo.CurrentType, newType) {
+	// Check compatibility - if we have a declared type, check against that
+	expectedType := typeInfo.CurrentType
+	if typeInfo.IsDeclared && typeInfo.CurrentType == TypeUnknown {
+		expectedType = typeInfo.DeclaredType
+	}
+	
+	if !IsTypeCompatible(expectedType, newType) {
 		return TypeMismatchError{
 			Table:    tableName,
 			Column:   columnName,
-			Expected: typeInfo.CurrentType,
+			Expected: expectedType,
 			Actual:   newType,
 		}
 	}
@@ -150,9 +159,45 @@ func (ms *MetaStore) SetColumnType(tableName, columnName string, value interface
 		typeInfo.CurrentType = newType
 		typeInfo.IsConfirmed = true
 		typeInfo.LastUpdateTime = time.Now()
+	} else if typeInfo.CurrentType == newType && !typeInfo.IsConfirmed {
+		// Confirm the type even if it matches
+		typeInfo.IsConfirmed = true
+		typeInfo.LastUpdateTime = time.Now()
 	}
 	
 	return nil
+}
+
+// SetColumnTypeFromSchema sets the declared type of a column from CREATE TABLE
+func (ms *MetaStore) SetColumnTypeFromSchema(tableName, columnName string, declaredType ColumnType) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	
+	// Initialize table type map if needed
+	if _, exists := ms.columnTypes[tableName]; !exists {
+		ms.columnTypes[tableName] = make(map[string]*ColumnTypeInfo)
+	}
+	
+	// Get or create column type info
+	typeInfo, exists := ms.columnTypes[tableName][columnName]
+	if !exists {
+		typeInfo = &ColumnTypeInfo{
+			CurrentType:    TypeUnknown,
+			DeclaredType:   declaredType,
+			IsConfirmed:    false,
+			IsDeclared:     true,
+			LastUpdateTime: time.Now(),
+		}
+		ms.columnTypes[tableName][columnName] = typeInfo
+	} else {
+		// Update declared type
+		typeInfo.DeclaredType = declaredType
+		typeInfo.IsDeclared = true
+		// If current type is unknown, use declared type as current
+		if typeInfo.CurrentType == TypeUnknown {
+			typeInfo.CurrentType = declaredType
+		}
+	}
 }
 
 // ValidateValueType validates that a value is compatible with the column's type

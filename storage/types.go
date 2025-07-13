@@ -14,12 +14,15 @@ const (
 	TypeFloat                     // Floating point type
 	TypeString                    // String type
 	TypeBoolean                   // Boolean type
+	TypeTimestamp                 // Timestamp type
 )
 
 // ColumnTypeInfo stores type information for a column
 type ColumnTypeInfo struct {
 	CurrentType    ColumnType
+	DeclaredType   ColumnType // Type declared in CREATE TABLE (if any)
 	IsConfirmed    bool      // Whether type has been confirmed by non-NULL value
+	IsDeclared     bool      // Whether type was explicitly declared in CREATE TABLE
 	LastUpdateTime time.Time
 }
 
@@ -49,6 +52,8 @@ func TypeToString(t ColumnType) string {
 		return "string"
 	case TypeBoolean:
 		return "boolean"
+	case TypeTimestamp:
+		return "timestamp"
 	default:
 		return "invalid"
 	}
@@ -70,7 +75,7 @@ func IsTypeCompatible(currentType, newType ColumnType) bool {
 
 // InferTypeFromValue infers the ColumnType from a value
 func InferTypeFromValue(value interface{}) ColumnType {
-	switch value.(type) {
+	switch v := value.(type) {
 	case nil:
 		return TypeUnknown
 	case bool:
@@ -79,7 +84,16 @@ func InferTypeFromValue(value interface{}) ColumnType {
 		return TypeInteger
 	case float32, float64:
 		return TypeFloat
+	case time.Time:
+		return TypeTimestamp
 	case string:
+		// Check if it looks like a timestamp in common formats
+		if _, err := time.Parse(time.RFC3339, v); err == nil {
+			return TypeTimestamp
+		}
+		if _, err := time.Parse("2006-01-02 15:04:05", v); err == nil {
+			return TypeTimestamp
+		}
 		// Treat strings as strings (no automatic conversion to numbers)
 		return TypeString
 	default:
