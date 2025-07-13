@@ -7,7 +7,7 @@ set -e
 
 # Configuration
 DOCKER_REPO="satetsu888/vsql"
-PLATFORMS="linux/amd64,linux/arm64,linux/arm/v7"
+PLATFORMS="linux/amd64,linux/arm64"
 
 # Colors for output
 RED='\033[0;31m'
