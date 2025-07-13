@@ -220,7 +220,7 @@ func executeCommand(command string, store *storage.DataStore, metaStore *storage
 		}
 		
 		// Print results
-		if len(columns) > 0 && len(rows) > 0 {
+		if len(columns) > 0 {
 			// Print column headers
 			fmt.Println(strings.Join(columns, "\t"))
 			

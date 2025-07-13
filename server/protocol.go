@@ -24,6 +24,17 @@ const (
 	RowDescription      MessageType = 'T'
 	NoData              MessageType = 'n'
 	EmptyQueryResponse  MessageType = 'I'
+	
+	// Extended Query Protocol
+	Parse               MessageType = 'P'
+	Bind                MessageType = 'B'
+	Execute             MessageType = 'E'
+	Describe            MessageType = 'D'
+	Close               MessageType = 'C'
+	Sync                MessageType = 'S'
+	Flush               MessageType = 'H'
+	ParameterDescription MessageType = 't'
+	PortalSuspended     MessageType = 's'
 )
 
 type Message struct {
@@ -156,4 +167,38 @@ func WriteBackendKeyData(w io.Writer, processID, secretKey int32) error {
 	binary.Write(&buf, binary.BigEndian, processID)
 	binary.Write(&buf, binary.BigEndian, secretKey)
 	return WriteMessage(w, BackendKeyData, buf.Bytes())
+}
+
+func WriteParseComplete(w io.Writer) error {
+	return WriteMessage(w, ParseComplete, []byte{})
+}
+
+func WriteBindComplete(w io.Writer) error {
+	return WriteMessage(w, BindComplete, []byte{})
+}
+
+func WriteNoData(w io.Writer) error {
+	return WriteMessage(w, NoData, []byte{})
+}
+
+func WriteEmptyQueryResponse(w io.Writer) error {
+	return WriteMessage(w, EmptyQueryResponse, []byte{})
+}
+
+func WriteParameterDescription(w io.Writer, paramTypes []int32) error {
+	var buf bytes.Buffer
+	
+	// Number of parameters
+	binary.Write(&buf, binary.BigEndian, int16(len(paramTypes)))
+	
+	// OID of each parameter type
+	for _, oid := range paramTypes {
+		binary.Write(&buf, binary.BigEndian, oid)
+	}
+	
+	return WriteMessage(w, ParameterDescription, buf.Bytes())
+}
+
+func WritePortalSuspended(w io.Writer) error {
+	return WriteMessage(w, PortalSuspended, []byte{})
 }

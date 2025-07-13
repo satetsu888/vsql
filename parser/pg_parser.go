@@ -80,7 +80,17 @@ func executePgSelect(stmt *pg_query.SelectStmt, dataStore *storage.DataStore, me
 
 		resultRow := make([]interface{}, len(columns))
 		for i, col := range columns {
-			resultRow[i] = row[col]
+			// Try the column name as-is first
+			if val, exists := row[col]; exists {
+				resultRow[i] = val
+			} else if strings.Contains(col, ".") {
+				// If it's a qualified name and not found, try the unqualified part
+				parts := strings.Split(col, ".")
+				unqualified := parts[len(parts)-1]
+				resultRow[i] = row[unqualified]
+			} else {
+				resultRow[i] = row[col]
+			}
 		}
 		resultRows = append(resultRows, resultRow)
 	}
@@ -375,9 +385,8 @@ func extractSelectColumns(stmt *pg_query.SelectStmt, tableName string, metaStore
 				columns = append(columns, resTarget.ResTarget.Name)
 			} else if colRef, ok := resTarget.ResTarget.Val.Node.(*pg_query.Node_ColumnRef); ok {
 				if len(colRef.ColumnRef.Fields) > 0 {
-					if str, ok := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
-						columns = append(columns, str.String_.Sval)
-					} else if _, ok := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_AStar); ok {
+					// Check if it's a star (*)
+					if _, ok := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_AStar); ok {
 						columns = metaStore.GetTableColumns(tableName)
 						if len(columns) == 0 && len(rows) > 0 {
 							// Collect column names and sort them for consistent ordering
@@ -389,6 +398,21 @@ func extractSelectColumns(stmt *pg_query.SelectStmt, tableName string, metaStore
 							columns = allCols
 						}
 						break
+					} else {
+						// Extract column name (preserve qualified names like table.column)
+						var parts []string
+						for _, field := range colRef.ColumnRef.Fields {
+							if str, ok := field.Node.(*pg_query.Node_String_); ok {
+								parts = append(parts, str.String_.Sval)
+							}
+						}
+						if len(parts) > 1 {
+							// For qualified names (table.column), use the full qualified name
+							columns = append(columns, strings.Join(parts, "."))
+						} else if len(parts) == 1 {
+							// For unqualified names, use just the column name
+							columns = append(columns, parts[0])
+						}
 					}
 				}
 			}
@@ -442,7 +466,9 @@ func evaluateNullTest(row storage.Row, expr *pg_query.NullTest) bool {
 	// Get the column value
 	if colRef, ok := expr.Arg.Node.(*pg_query.Node_ColumnRef); ok {
 		if len(colRef.ColumnRef.Fields) > 0 {
-			if str, ok := colRef.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
+			// Extract the last field as the column name (handles schema.table.column)
+			lastFieldIdx := len(colRef.ColumnRef.Fields) - 1
+			if str, ok := colRef.ColumnRef.Fields[lastFieldIdx].Node.(*pg_query.Node_String_); ok {
 				val = row[str.String_.Sval]
 			}
 		}
@@ -645,33 +671,34 @@ func extractValueFromExpr(row storage.Row, node *pg_query.Node) interface{} {
 	
 	switch n := node.Node.(type) {
 	case *pg_query.Node_ColumnRef:
-		// Handle qualified (table.column) and unqualified (column) references
-		if len(n.ColumnRef.Fields) >= 2 {
-			// Qualified column reference (table.column)
-			tableName := ""
-			columnName := ""
-			
-			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
-				tableName = str.String_.Sval
-			}
-			if str, ok := n.ColumnRef.Fields[1].Node.(*pg_query.Node_String_); ok {
-				columnName = str.String_.Sval
-			}
-			
-			// First try the qualified column name
-			qualifiedName := tableName + "." + columnName
-			if val, exists := row[qualifiedName]; exists {
-				return val
-			}
-			
-			// Fall back to unqualified column name
-			val := row[columnName]
-			return val
-		} else if len(n.ColumnRef.Fields) > 0 {
-			// Unqualified column reference
-			if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
-				colName := str.String_.Sval
-				return row[colName]
+		// Handle qualified (table.column or schema.table.column) and unqualified (column) references
+		if len(n.ColumnRef.Fields) > 0 {
+			// Extract the last field as the column name
+			lastFieldIdx := len(n.ColumnRef.Fields) - 1
+			if str, ok := n.ColumnRef.Fields[lastFieldIdx].Node.(*pg_query.Node_String_); ok {
+				columnName := str.String_.Sval
+				
+				// For qualified references, try multiple variations
+				if len(n.ColumnRef.Fields) >= 2 {
+					// Try the full qualified name first
+					var parts []string
+					for i := 0; i < len(n.ColumnRef.Fields); i++ {
+						if s, ok := n.ColumnRef.Fields[i].Node.(*pg_query.Node_String_); ok {
+							parts = append(parts, s.String_.Sval)
+						}
+					}
+					
+					// Try progressively shorter qualified names
+					for i := 0; i < len(parts)-1; i++ {
+						qualifiedName := strings.Join(parts[i:], ".")
+						if val, exists := row[qualifiedName]; exists {
+							return val
+						}
+					}
+				}
+				
+				// Fall back to unqualified column name
+				return row[columnName]
 			}
 		}
 	case *pg_query.Node_AConst:

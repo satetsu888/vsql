@@ -1149,46 +1149,40 @@ func evaluateSelectExpression(resTarget *pg_query.ResTarget, currentRow storage.
 			}
 			return nil, colName
 		case *pg_query.Node_ColumnRef:
-			// Handle column reference with potential table alias
-			var columnName string
-			var tableName string
+			// Handle column reference with potential table alias or schema qualification
 			fields := val.ColumnRef.Fields
 			
-			if len(fields) == 2 {
-				// table.column format
-				if str, ok := fields[0].Node.(*pg_query.Node_String_); ok {
-					tableName = str.String_.Sval
-				}
-				if str, ok := fields[1].Node.(*pg_query.Node_String_); ok {
-					columnName = str.String_.Sval
-				}
-				
-				// First try to find the qualified column name in the row
-				qualifiedName := tableName + "." + columnName
-				if val, exists := currentRow[qualifiedName]; exists {
-					if colName == "" {
-						colName = columnName
+			if len(fields) > 0 {
+				// Extract all parts
+				var parts []string
+				for _, field := range fields {
+					if str, ok := field.Node.(*pg_query.Node_String_); ok {
+						parts = append(parts, str.String_.Sval)
 					}
-					return val, colName
 				}
 				
-				// If not found, fall back to unqualified name
+				// The last part is always the column name
+				columnName := parts[len(parts)-1]
+				
+				// Try different qualified forms from most specific to least specific
+				// e.g., schema.table.column -> table.column -> column
+				for i := 0; i < len(parts); i++ {
+					qualifiedName := strings.Join(parts[i:], ".")
+					if val, exists := currentRow[qualifiedName]; exists {
+						if colName == "" {
+							// Preserve the full qualified name in output
+							colName = strings.Join(parts, ".")
+						}
+						return val, colName
+					}
+				}
+				
+				// Final fallback: check if column exists in row
 				if val, exists := currentRow[columnName]; exists {
 					if colName == "" {
-						colName = columnName
+						colName = strings.Join(parts, ".")
 					}
 					return val, colName
-				}
-			} else if len(fields) == 1 {
-				// Just column name
-				if str, ok := fields[0].Node.(*pg_query.Node_String_); ok {
-					columnName = str.String_.Sval
-				}
-				if columnName != "" {
-					if colName == "" {
-						colName = columnName
-					}
-					return currentRow[columnName], colName
 				}
 			}
 		case *pg_query.Node_AConst:
@@ -1445,8 +1439,12 @@ func extractColumnName(node *pg_query.Node) string {
 				parts = append(parts, str.String_.Sval)
 			}
 		}
-		if len(parts) > 0 {
-			return parts[len(parts)-1] // Return last part (column name)
+		if len(parts) > 1 {
+			// For qualified names (table.column), return the full qualified name
+			return strings.Join(parts, ".")
+		} else if len(parts) == 1 {
+			// For unqualified names, return just the column name
+			return parts[0]
 		}
 	case *pg_query.Node_FuncCall:
 		funcName := getFunctionName(n.FuncCall)
@@ -1667,11 +1665,19 @@ func sortRows(rows [][]interface{}, columns []string, sortClause []*pg_query.Nod
 				if sortBy.SortBy.Node != nil {
 					switch n := sortBy.SortBy.Node.Node.(type) {
 					case *pg_query.Node_ColumnRef:
-						// Get column name from the reference
-						if len(n.ColumnRef.Fields) > 0 {
-							if str, ok := n.ColumnRef.Fields[0].Node.(*pg_query.Node_String_); ok {
-								colName = str.String_.Sval
+						// Get column name from the reference (handle qualified names)
+						var parts []string
+						for _, field := range n.ColumnRef.Fields {
+							if str, ok := field.Node.(*pg_query.Node_String_); ok {
+								parts = append(parts, str.String_.Sval)
 							}
+						}
+						if len(parts) > 1 {
+							// For qualified names (table.column), use the full qualified name
+							colName = strings.Join(parts, ".")
+						} else if len(parts) == 1 {
+							// For unqualified names, use just the column name
+							colName = parts[0]
 						}
 					case *pg_query.Node_AConst:
 						// Handle ORDER BY position (e.g., ORDER BY 1)
