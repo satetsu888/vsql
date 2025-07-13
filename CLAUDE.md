@@ -6,6 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 VSQL is a PostgreSQL-compatible, schema-less, in-memory database written in Go. It uses PostgreSQL's official parser (pg_query_go) to provide full SQL syntax support while maintaining NoSQL-like flexibility.
 
+**⚠️ IMPORTANT: This project is currently PENDING**
+- Development has been suspended due to a fundamental architectural conflict between schema-less design and properly generating PostgreSQL protocol's RowDescription messages
+- Basic queries from psql work, but queries from ORMs (ActiveRecord, Prisma, SQLAlchemy, etc.) often fail
+- Client libraries that require accurate type information do not work as expected
+
 ## Essential Commands
 
 ### Build and Run
@@ -95,13 +100,19 @@ go vet ./...
 
 VSQL is available as a Docker image, making it easy to deploy and use in containerized environments.
 
-#### Building the Docker Image
+#### Building and Publishing the Docker Image
 ```bash
-# Build the image
-docker build -t satetsu888/vsql:latest .
+# Build multi-architecture image (local build only)
+./build-and-push.sh
+
+# Build and push to DockerHub
+./build-and-push.sh --push
 
 # Build with a specific tag
-docker build -t satetsu888/vsql:1.0.0 .
+./build-and-push.sh --push --tag v1.0.0
+
+# Note: The build script now builds for linux/amd64 and linux/arm64 only
+# (linux/arm/v7 was removed due to build time constraints)
 ```
 
 #### Running VSQL in Docker
@@ -202,17 +213,30 @@ docker run -d -p 5432:5432 satetsu888/vsql:latest
      - Value conversion and comparison functions
      - Pattern matching for LIKE operator
      - Function name extraction and aggregate function detection
+   - `prepared_statements.go`: Manages prepared statement storage
+   - `prepare_execute.go`: Handles PREPARE/EXECUTE/DEALLOCATE SQL commands
    - Uses `github.com/pganalyze/pg_query_go/v5` for PostgreSQL-compatible parsing
 
 3. **Server Module** (`server/`)
    - `server.go`: Main server logic, handles client connections
-   - `protocol.go`: PostgreSQL wire protocol implementation
+   - `protocol.go`: PostgreSQL wire protocol implementation (Simple Query Protocol)
+   - `extended_protocol.go`: Extended Query Protocol implementation
+     - Handles Parse, Bind, Execute, Describe, Close messages
+     - Maps VSQL types to PostgreSQL OIDs
+     - Limited parameter type inference
    - Listens on port 5432 by default, compatible with psql and other PostgreSQL clients
 
 4. **Storage Module** (`storage/`)
    - `datastore.go`: In-memory table and row storage using `sync.RWMutex` for thread safety
    - `metastore.go`: Metadata storage for table schemas, column ordering, and type information
-   - `types.go`: Type system definitions (Integer, Float, String, Boolean) and type inference
+     - Tracks column types per table
+     - Maintains column order from CREATE TABLE
+     - Validates type compatibility on INSERT/UPDATE
+   - `types.go`: Type system definitions and type inference
+     - Basic types: Integer, Float, String, Boolean, Timestamp
+     - Type inference from values
+     - Type compatibility rules (e.g., Integer→Float promotion)
+     - PostgreSQL OID mapping for Extended Query Protocol
    - Schema-less design: rows are `map[string]interface{}`, non-existent columns return NULL
    - Type safety: Automatic type inference with validation to prevent incompatible type changes
 
@@ -298,6 +322,11 @@ docker run -d -p 5432:5432 satetsu888/vsql:latest
 ### Partially Implemented
 - UNION/UNION ALL: Basic structure exists but not fully tested
 - SELECT without FROM clause: Now supported for PostgreSQL compatibility
+- Extended Query Protocol: Basic implementation exists but has limitations:
+  - Parse, Bind, Execute, Describe, Close messages are implemented
+  - Parameter type inference is limited (only OFFSET clauses)
+  - RowDescription messages lack accurate type information for schema-less columns
+  - Prepared statements (PREPARE/EXECUTE/DEALLOCATE) are supported
 
 ### Not Yet Implemented
 - ILIKE operator (case-insensitive LIKE)
@@ -312,6 +341,9 @@ docker run -d -p 5432:5432 satetsu888/vsql:latest
 - Foreign keys
 - Views
 - Stored procedures/functions
+- information_schema tables (required by many ORMs)
+- System functions like current_database(), current_schema()
+- Full ORM compatibility (due to type information requirements)
 
 ## Writing SQL Test Files
 
@@ -423,3 +455,25 @@ Place test files in the appropriate subdirectory:
 - `data_types/` - Data type specific tests (boolean, numeric, text, etc.)
 - `functions/` - SQL functions (UPPER, LOWER, COALESCE, etc.)
 - `type_safety/` - Type inference and type mismatch tests
+
+## Project Status and Future Directions
+
+### Current Limitations
+The fundamental challenge is that PostgreSQL's Extended Query Protocol requires accurate type information in RowDescription messages, which conflicts with the schema-less design philosophy. This makes it difficult to support ORMs and advanced client libraries that rely on this type information.
+
+### Potential Future Directions
+1. **Hybrid Schema-less Approach**: Maintain type information from first INSERT while allowing new columns
+2. **Development Environment Focus**: Position as a rapid prototyping tool rather than full PostgreSQL replacement
+3. **Enhanced Type Inference**: Improve context-based type inference for better ORM compatibility
+4. **information_schema Implementation**: Add virtual tables for basic ORM support
+
+### Testing Extended Query Protocol
+```bash
+# Test basic ORM-style queries
+./test_protocol.sh
+
+# Test prepared statements
+./test_orm_query.sh
+```
+
+These scripts test the Extended Query Protocol implementation and help identify compatibility issues with ORMs.
