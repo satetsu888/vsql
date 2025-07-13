@@ -101,10 +101,8 @@ func (ms *MetaStore) GetColumnType(tableName, columnName string) ColumnType {
 	
 	if tableTypes, exists := ms.columnTypes[tableName]; exists {
 		if typeInfo, exists := tableTypes[columnName]; exists {
-			// Prefer declared type if available and column has no confirmed data type yet
-			if typeInfo.IsDeclared && !typeInfo.IsConfirmed {
-				return typeInfo.DeclaredType
-			}
+			// For schema-less design, always use current type
+			// Declared types are hints, not constraints
 			return typeInfo.CurrentType
 		}
 	}
@@ -139,13 +137,13 @@ func (ms *MetaStore) SetColumnType(tableName, columnName string, value interface
 	// Infer type from value
 	newType := InferTypeFromValue(value)
 	
-	// Check compatibility - if we have a declared type, check against that
+	// Check compatibility - for schema-less design, we allow type inference
+	// to override declared types (declared types are hints, not constraints)
 	expectedType := typeInfo.CurrentType
-	if typeInfo.IsDeclared && typeInfo.CurrentType == TypeUnknown {
-		expectedType = typeInfo.DeclaredType
-	}
 	
-	if !IsTypeCompatible(expectedType, newType) {
+	// Only check compatibility if we have a confirmed type
+	// Ignore declared types for flexibility
+	if typeInfo.IsConfirmed && !IsTypeCompatible(expectedType, newType) {
 		return TypeMismatchError{
 			Table:    tableName,
 			Column:   columnName,
@@ -193,10 +191,8 @@ func (ms *MetaStore) SetColumnTypeFromSchema(tableName, columnName string, decla
 		// Update declared type
 		typeInfo.DeclaredType = declaredType
 		typeInfo.IsDeclared = true
-		// If current type is unknown, use declared type as current
-		if typeInfo.CurrentType == TypeUnknown {
-			typeInfo.CurrentType = declaredType
-		}
+		// For schema-less design, don't set current type from declared type
+		// Let actual values determine the type
 	}
 }
 
