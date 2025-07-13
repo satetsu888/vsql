@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -92,8 +93,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 			// Client is closing connection
 			return
 		default:
-			// Silently ignore unknown message types for better compatibility
-			// fmt.Printf("Unhandled message type: %c\n", msg.Type)
+			// Log warning for unknown message types but continue processing
+			log.Printf("WARNING: Unsupported protocol message type: %c (0x%02x). Ignoring and continuing.\n", msg.Type, msg.Type)
 		}
 	}
 }

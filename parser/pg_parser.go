@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 
@@ -38,7 +39,9 @@ func ExecutePgQuery(query string, dataStore *storage.DataStore, metaStore *stora
 	case *pg_query.Node_DropStmt:
 		return executePgDropTable(node.DropStmt, dataStore, metaStore)
 	default:
-		return nil, nil, "", fmt.Errorf("unsupported statement type: %T", node)
+		// Log warning for unsupported statement types but return empty result
+		log.Printf("WARNING: Unsupported SQL statement type: %T. Query will be ignored.\n", node)
+		return []string{}, [][]interface{}{}, "SELECT 0", nil
 	}
 }
 
