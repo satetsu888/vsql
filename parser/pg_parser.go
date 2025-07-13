@@ -38,6 +38,12 @@ func ExecutePgQuery(query string, dataStore *storage.DataStore, metaStore *stora
 		return executePgCreateTable(node.CreateStmt, dataStore, metaStore)
 	case *pg_query.Node_DropStmt:
 		return executePgDropTable(node.DropStmt, dataStore, metaStore)
+	case *pg_query.Node_PrepareStmt:
+		return executePgPrepare(node.PrepareStmt, dataStore, metaStore)
+	case *pg_query.Node_ExecuteStmt:
+		return executePgExecute(node.ExecuteStmt, dataStore, metaStore)
+	case *pg_query.Node_DeallocateStmt:
+		return executePgDeallocate(node.DeallocateStmt)
 	default:
 		// Log warning for unsupported statement types but return empty result
 		log.Printf("WARNING: Unsupported SQL statement type: %T. Query will be ignored.\n", node)
@@ -869,3 +875,22 @@ func extractPgValue(node *pg_query.Node) interface{} {
 // toNumber is now in pg_parser_utils.go
 
 // matchPattern is now in pg_parser_utils.go
+
+// executePgPrepare handles PREPARE statements
+func executePgPrepare(stmt *pg_query.PrepareStmt, dataStore *storage.DataStore, metaStore *storage.MetaStore) ([]string, [][]interface{}, string, error) {
+	// For now, we'll return an error saying PREPARE is not fully implemented
+	// A complete implementation would need to store the query and handle parameter types
+	return nil, nil, "", fmt.Errorf("PREPARE statement is not yet implemented")
+}
+
+// executePgExecute handles EXECUTE statements
+func executePgExecute(stmt *pg_query.ExecuteStmt, dataStore *storage.DataStore, metaStore *storage.MetaStore) ([]string, [][]interface{}, string, error) {
+	// For now, we'll return an error saying EXECUTE is not fully implemented
+	return nil, nil, "", fmt.Errorf("EXECUTE statement is not yet implemented")
+}
+
+// executePgDeallocate handles DEALLOCATE statements
+func executePgDeallocate(stmt *pg_query.DeallocateStmt) ([]string, [][]interface{}, string, error) {
+	// For now, we'll return an error saying DEALLOCATE is not fully implemented
+	return nil, nil, "", fmt.Errorf("DEALLOCATE statement is not yet implemented")
+}
